@@ -5,6 +5,7 @@ import { DataProvider } from '@looker/components-data'
 import { Query, Visualization } from '@looker/visualizations'
 import ChatBot from './ChatBot';
 import Examples from './Examples';
+import Fields from './Fields';
 
 export const HelloWorld = () => {
   const { core40SDK } = useContext(ExtensionContext)
@@ -43,43 +44,12 @@ export const HelloWorld = () => {
               <Examples />
             </div>
           </Tab2>
-          {/* <Tab2 id="1" label="Jobs Overview">
-            <iframe
-              // {window.location.href}
-              src = 'https://452227bf-6f71-4262-bb19-e913e4ee41db.looker.app/embed/dashboards/bigquery-velo::slots_overview'
-              width="100%"
-              height="100%"
-              title="Jobs Overview"
-              style={{ border: 'none' }}
-            />
+          <Tab2 id="12" label="Fields">
+            <div>
+            <h1>Fields set up.</h1>
+              <Fields />
+            </div>
           </Tab2>
-          <Tab2 id="2" label="Materialized Views Stats">
-            <iframe
-              src = 'https://452227bf-6f71-4262-bb19-e913e4ee41db.looker.app/embed/dashboards/bigquery-velo::materialized_views'
-              width="100%"
-              height="100%"
-              title="Materialized Views"
-              style={{ border: 'none' }}
-            />
-          </Tab2>
-          <Tab2 id="3" label="BI Engine Stats">
-            <iframe
-              src = 'https://452227bf-6f71-4262-bb19-e913e4ee41db.looker.app/embed/dashboards/bigquery-velo::bi_engine'
-              width="100%"
-              height="100%"
-              title="BI Engine Stats"
-              style={{ border: 'none' }}
-            />
-          </Tab2>
-          <Tab2 id="7" label="Gemini Suggestions">
-            <iframe
-              src = 'https://452227bf-6f71-4262-bb19-e913e4ee41db.looker.app/embed/dashboards/bigquery-velo::gemini_suggestions'
-              width="100%"
-              height="100%"
-              title="Gemini Suggestions"
-              style={{ border: 'none' }}
-            />
-          </Tab2> */}
         </Tabs2>
         <Space around>
           <Span fontSize="xxxxxlarge">
