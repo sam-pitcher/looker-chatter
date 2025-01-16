@@ -78,7 +78,7 @@ const ChatBot = () => {
         }
 
         const { dimensions, measures } = response.metadata.fields;
-        
+
         if (!dimensions || !measures || dimensions.length === 0 || measures.length === 0) {
             console.error('No dimensions or measures found');
             return null;
@@ -95,7 +95,7 @@ const ChatBot = () => {
         if (dimensions.length > 1) {
             const secondaryDimension = dimensions[1].name;
             const secondaryValues = [...new Set(response.rows.map(row => row[secondaryDimension].value))];
-            
+
             const datasets = secondaryValues.map((secondaryValue, index) => {
                 const filteredRows = response.rows.filter(row => row[secondaryDimension].value === secondaryValue);
                 const groupedSecondaryData = groupDataByDimension(filteredRows, primaryDimension, measureName);
@@ -146,7 +146,7 @@ const ChatBot = () => {
         const response = message.queryResponse;
         const { dimensions } = response.metadata.fields;
         const measureName = response.metadata.fields.measures[0].name;
-        
+
         // Regroup data based on new primary dimension
         const groupedData = groupDataByDimension(response.rows, dimensionName, measureName);
         const labels = Object.keys(groupedData);
@@ -181,7 +181,7 @@ const ChatBot = () => {
         }
 
         const updatedChartData = { labels, datasets };
-        setMessages(prevMessages => prevMessages.map(msg => 
+        setMessages(prevMessages => prevMessages.map(msg =>
             msg === message ? {
                 ...msg,
                 chartData: updatedChartData,
@@ -196,7 +196,7 @@ const ChatBot = () => {
 
         // Get the first dataset's values for sorting
         const sortValues = newData.datasets[0].data;
-        
+
         // Create array of label-value pairs for sorting
         const pairs = newData.labels.map((label, index) => ({
             label,
@@ -249,7 +249,7 @@ const ChatBot = () => {
             }));
 
             const generatedContent = chatResponse[0]["chat_prompt.generated_content"].trim();
-            
+
             const botMessage = { sender: 'bot', text: generatedContent };
             setMessages(prevMessages => [...prevMessages, botMessage]);
 
@@ -337,7 +337,7 @@ const ChatBot = () => {
             y: {
                 beginAtZero: true,
                 ticks: {
-                    callback: function(value) {
+                    callback: function (value) {
                         return value.toLocaleString();
                     }
                 }
@@ -356,7 +356,7 @@ const ChatBot = () => {
             {message.dimensions && message.dimensions.length > 1 && (
                 <div style={styles.controlGroup}>
                     <label style={styles.controlLabel}>Primary Dimension:</label>
-                    <select 
+                    <select
                         value={message.currentDimension}
                         onChange={(e) => onDimensionChange(message, e.target.value)}
                         style={styles.select}

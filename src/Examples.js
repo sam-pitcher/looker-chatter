@@ -196,17 +196,17 @@ ${item.url}
             alert('No data to upload. Please add rows first.');
             return;
         }
-    
+
         try {
             // Prepare data for BigQuery
             const uploadedData = secondQueryResults.map((row) => ({
                 input_question: row['examples.input_question'] || null,
                 output_json: row['examples.output_json'] || null,
             }));
-    
+
             // Log the prepared data for debugging
             console.log('Uploading data:', uploadedData);
-    
+
             // Construct the SQL query as a string
             const rows = uploadedData.map(data => `
                 STRUCT(
@@ -214,7 +214,7 @@ ${item.url}
                     ${data.output_json !== null ? `'${data.output_json.replace(/'/g, "\\'")}'` : 'NULL'} AS output_json
                 )
             `);
-    
+
             const sqlQuery = `
                 CREATE OR REPLACE TABLE \`chatter.examples_test\` AS
                 SELECT 
@@ -224,10 +224,10 @@ ${item.url}
                     '${selectedModel}' AS model,
                 FROM UNNEST([${rows.join(',\n')}]);
             `;
-    
+
             // Print the SQL query
             console.log('Generated SQL Query:', sqlQuery);
-    
+
             // Create the SQL query using Looker SDK
             const sqlQueryResponse = await core40SDK.ok(
                 core40SDK.create_sql_query({
@@ -236,26 +236,26 @@ ${item.url}
                     sql: sqlQuery,
                 })
             );
-    
+
             // Extract the slug from the response
             const { slug } = sqlQueryResponse;
-    
+
             // Run the SQL query using Looker SDK
             const runResponse = await core40SDK.ok(
                 core40SDK.run_sql_query(slug, 'json')
             );
-    
+
             console.log('Run Response:', runResponse);
-    
+
             alert('Table created or replaced successfully!');
         } catch (error) {
             console.error('Upload failed:', error);
             alert('Upload failed. Please try again.');
         }
     };
-    
-    
-    
+
+
+
 
     return (
         <div style={styles.container}>
@@ -479,7 +479,7 @@ const styles = {
         gap: '12px',
         marginTop: '20px',
         marginBottom: '20px',  // Add margin-bottom to create space before the next section
-    },    
+    },
     primaryButton: {
         padding: '10px 20px',
         fontSize: '14px',
