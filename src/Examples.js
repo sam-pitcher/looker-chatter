@@ -155,8 +155,11 @@ const Examples = () => {
 
     const handleModalSave = () => {
         try {
-            // Convert JSON data to a single-line string
-            const updatedJsonString = JSON.stringify(jsonEditData);
+            // Convert JSON data to a single-line string and remove escaping for double quotes
+            const updatedJsonString = JSON.stringify(jsonEditData)
+                .replace(/\\"/g, '"') // Remove escape backslashes for double quotes
+                .replace(/\\n|\\t|\\r/g, ''); // Remove any potential escaped newlines, tabs, or carriage returns
+    
             const updatedRows = [...secondQueryResults];
     
             // Update the specific row with the edited JSON and question
@@ -173,6 +176,7 @@ const Examples = () => {
             alert('Failed to save changes. Please ensure the JSON is valid.');
         }
     };
+    
     
 
     const handleJsonFieldChange = (key, value) => {

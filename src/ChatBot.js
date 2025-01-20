@@ -268,30 +268,43 @@ const ChatBot = () => {
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
-
-        const userMessage = { sender: 'user', text: input };
-        setMessages(prevMessages => [...prevMessages, userMessage]);
-
+    
+        const inputClean = input
+            .replace(/[,]/g, '') // Remove commas
+            .replace(/[^\w\s.()?()-]/g, '') // Remove special characters except for ?, periods, parentheses, and hyphens
+            .trim();
+        const userMessage = { sender: 'user', text: inputClean };
+        
+        // Add the new message to the messages array immediately
+        setMessages(prevMessages => {
+            const newMessages = [...prevMessages, userMessage]; // Add the new user message
+            processChatResponse(newMessages); // Process chat response with updated messages
+            return newMessages;
+        });
+    
+        setInput('');
+    };
+    
+    const processChatResponse = async (updatedMessages) => {
         try {
+            // Update the chat history directly here to include the latest message
             const chatResponse = await core40SDK.ok(core40SDK.run_inline_query({
                 body: {
                     model: 'chatter',
                     view: 'chat_prompt',
                     fields: ['chat_prompt.generated_content'],
                     filters: {
-                        'chat_prompt.previous_messages': convertMessagesToBulletList(messages).replace(/,/g, ''),
+                        'chat_prompt.previous_messages': convertMessagesToBulletList(updatedMessages).replace(/,/g, ''),
                         'chat_prompt.prompt_input': input.replace(/,/g, ''),
                     },
                 },
                 result_format: 'json',
             }));
-
+    
             const generatedContent = chatResponse[0]["chat_prompt.generated_content"].trim();
-
+    
             const botMessage = { sender: 'bot', text: generatedContent };
-            console.log('json for query request: ', generatedContent)
-            // setMessages(prevMessages => [...prevMessages, botMessage]);
-
+    
             await runQueryFromJson(generatedContent);
         } catch (error) {
             console.error('Error:', error);
@@ -300,8 +313,6 @@ const ChatBot = () => {
                 { sender: 'bot', text: 'Error processing request. Please try again.' }
             ]);
         }
-
-        setInput('');
     };
 
     const runQueryFromJson = async (jsonStringInput) => {
