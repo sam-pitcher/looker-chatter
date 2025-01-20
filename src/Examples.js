@@ -154,15 +154,26 @@ const Examples = () => {
     };
 
     const handleModalSave = () => {
-        const updatedJsonString = JSON.stringify(jsonEditData, null, 2);
-        const updatedRows = [...secondQueryResults];
-        updatedRows[editIndex] = {
-            'examples.output_json': updatedJsonString,
-            'examples.input_question': editQuestion
-        };
-        setSecondQueryResults(updatedRows);
-        setModalIsOpen(false);
+        try {
+            // Convert JSON data to a single-line string
+            const updatedJsonString = JSON.stringify(jsonEditData);
+            const updatedRows = [...secondQueryResults];
+    
+            // Update the specific row with the edited JSON and question
+            updatedRows[editIndex] = {
+                'examples.output_json': updatedJsonString,
+                'examples.input_question': editQuestion,
+            };
+    
+            // Save changes and close the modal
+            setSecondQueryResults(updatedRows);
+            setModalIsOpen(false);
+        } catch (error) {
+            console.error('Error saving modal data:', error);
+            alert('Failed to save changes. Please ensure the JSON is valid.');
+        }
     };
+    
 
     const handleJsonFieldChange = (key, value) => {
         setJsonEditData(prev => {

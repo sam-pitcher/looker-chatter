@@ -22,11 +22,13 @@ const ChatBot = () => {
     const convertMessagesToBulletList = (messages) => {
         const bulletMessages = messages
         .map((item) => {
-            if (item.sender === "user") {
-                return `- User: ${item.text}`;
-            }
+            // if (item.sender === "user") {
+            //     return `- User: ${item.text}`;
+            // }
+            return `- ${item.sender}: ${item.text}`
         })
         .join("\n");
+        console.log("Messages: ", bulletMessages)
         return bulletMessages;
     };
 
@@ -48,48 +50,93 @@ const ChatBot = () => {
             return null;
         }
 
+        const rowsJSONString = JSON.stringify(response.rows)
+            .replace(/\\u0027/g, "'")
+            .replace(/\\/g, "")
+            .replace(/"/g, "'");
+        summariseJSONResponse(rowsJSONString)
+        console.log('json_bi rows response string: ', rowsJSONString)
+
         const { dimensions, measures } = response.metadata.fields;
 
-        // If no dimensions, return the raw response
         if (!dimensions || dimensions.length === 0) {
-            return {
-                type: 'text',
-                data: response.rows
-            };
+            return null;
+            // return {
+            //     type: 'text',
+            //     data: response.rows
+            // };
         }
 
         const primaryDimension = dimensions[0].name;
+        const pivotDimension = null; // Initialize with no pivot
+
+        const processedData = processDataWithPivot(response.rows, primaryDimension, pivotDimension, measures);
         
-        // Handle multiple measures with separate y-axes
-        const datasets = measures.map((measure, measureIndex) => {
-            const measureName = measure.name;
-            const groupedData = groupDataByDimension(response.rows, primaryDimension, measureName);
-            const labels = Object.keys(groupedData);
-            const values = Object.values(groupedData);
-
-            return {
-                label: measure.label,
-                data: values,
-                backgroundColor: generateColor(measureIndex),
-                borderColor: generateColor(measureIndex, 1),
-                borderWidth: 1,
-                tension: 0.1,
-                yAxisID: `y${measureIndex}`
-            };
-        });
-
-        const labels = Object.keys(groupDataByDimension(response.rows, primaryDimension, measures[0].name));
-
         return {
             type: 'chart',
-            data: { labels, datasets },
+            data: processedData,
             dimensions: dimensions,
             measures: measures,
             currentDimension: primaryDimension,
+            pivotDimension: pivotDimension,
             viewType: 'bar',
             sortDirection: 'asc',
             rawData: response.rows
         };
+    };
+
+    const processDataWithPivot = (rows, primaryDim, pivotDim, measures) => {
+        if (!pivotDim) {
+            // If no pivot dimension, process normally
+            const datasets = measures.map((measure, measureIndex) => {
+                const groupedData = groupDataByDimension(rows, primaryDim, measure.name);
+                const labels = Object.keys(groupedData);
+                const values = Object.values(groupedData);
+
+                return {
+                    label: measure.label,
+                    data: values,
+                    backgroundColor: generateColor(measureIndex),
+                    borderColor: generateColor(measureIndex, 1),
+                    borderWidth: 1,
+                    tension: 0.1,
+                    yAxisID: `y${measureIndex}`
+                };
+            });
+
+            const labels = Object.keys(groupDataByDimension(rows, primaryDim, measures[0].name));
+            return { labels, datasets };
+        }
+
+        // Process with pivot
+        const uniquePivotValues = [...new Set(rows.map(row => row[pivotDim].value))];
+        const primaryValues = [...new Set(rows.map(row => row[primaryDim].value))];
+
+        const datasets = [];
+        measures.forEach((measure, measureIndex) => {
+            uniquePivotValues.forEach((pivotValue, pivotIndex) => {
+                const data = primaryValues.map(primaryValue => {
+                    const matchingRows = rows.filter(row => 
+                        row[primaryDim].value === primaryValue && 
+                        row[pivotDim].value === pivotValue
+                    );
+                    if (matchingRows.length === 0) return 0;
+                    return matchingRows.reduce((sum, row) => sum + row[measure.name].value, 0) / matchingRows.length;
+                });
+
+                datasets.push({
+                    label: `${measure.label} - ${pivotValue}`,
+                    data: data,
+                    backgroundColor: generateColor(measureIndex * uniquePivotValues.length + pivotIndex),
+                    borderColor: generateColor(measureIndex * uniquePivotValues.length + pivotIndex, 1),
+                    borderWidth: 1,
+                    tension: 0.1,
+                    yAxisID: `y${measureIndex}`
+                });
+            });
+        });
+
+        return { labels: primaryValues, datasets };
     };
 
     const groupDataByDimension = (rows, dimension, measure) => {
@@ -112,33 +159,23 @@ const ChatBot = () => {
         }, {});
     };
 
-    const handleDimensionChange = (message, dimensionName) => {
+    const handleDimensionChange = (message, dimensionName, pivotDimension = null) => {
         const response = message.queryResponse;
         const { measures } = response.metadata.fields;
 
-        const labels = [...new Set(response.rows.map(row => row[dimensionName].value))];
-        
-        const datasets = measures.map((measure, measureIndex) => {
-            const groupedData = groupDataByDimension(response.rows, dimensionName, measure.name);
-            const data = labels.map(label => groupedData[label] || 0);
+        const processedData = processDataWithPivot(
+            response.rows,
+            dimensionName,
+            pivotDimension,
+            measures
+        );
 
-            return {
-                label: measure.label,
-                data,
-                backgroundColor: generateColor(measureIndex),
-                borderColor: generateColor(measureIndex, 1),
-                borderWidth: 1,
-                tension: 0.1,
-                yAxisID: `y${measureIndex}`
-            };
-        });
-
-        const updatedChartData = { labels, datasets };
         setMessages(prevMessages => prevMessages.map(msg =>
             msg === message ? {
                 ...msg,
-                chartData: updatedChartData,
-                currentDimension: dimensionName
+                chartData: processedData,
+                currentDimension: dimensionName,
+                pivotDimension: pivotDimension
             } : msg
         ));
     };
@@ -179,6 +216,56 @@ const ChatBot = () => {
         ));
     };
 
+    const summariseJSONResponse = async (json_input) => {
+        try {
+            // Convert the JSON input to a string and clean it up
+            const jsonString = JSON.stringify(json_input, null, 2);
+            
+            const summaryResponse = await core40SDK.ok(core40SDK.run_inline_query({
+                body: {
+                    model: 'chatter',
+                    view: 'summary_prompt',
+                    fields: ['summary_prompt.generated_content'],
+                    filters: {
+                        'summary_prompt.previous_messages': convertMessagesToBulletList(messages),
+                        'summary_prompt.prompt_input': jsonString,
+                    },
+                },
+                result_format: 'json',
+            }));
+    
+            if (summaryResponse && summaryResponse[0]) {
+                let generatedContent = summaryResponse[0]["summary_prompt.generated_content"]?.trim();
+                
+                if (generatedContent) {
+                    // Clean up the generated content by removing commas and special characters
+                    generatedContent = generatedContent
+                        .replace(/[,]/g, '') // Remove commas
+                        .replace(/[^\w\s.()?()-]/g, '') // Remove special characters except for ?, periods, parentheses, and hyphens
+                        .trim();
+                    
+                    const summaryMessage = { 
+                        sender: 'bot', 
+                        type: 'text',
+                        text: generatedContent 
+                    };
+                    setMessages(prevMessages => [...prevMessages, summaryMessage]);
+                }
+            }
+    
+        } catch (error) {
+            console.error('Error in summariseJSONResponse:', error);
+            setMessages(prevMessages => [
+                ...prevMessages,
+                { 
+                    sender: 'bot', 
+                    type: 'text',
+                    text: 'Error generating summary. Please try again.' 
+                }
+            ]);
+        }
+    };
+
     const handleSendMessage = async () => {
         if (!input.trim()) return;
 
@@ -202,7 +289,8 @@ const ChatBot = () => {
             const generatedContent = chatResponse[0]["chat_prompt.generated_content"].trim();
 
             const botMessage = { sender: 'bot', text: generatedContent };
-            setMessages(prevMessages => [...prevMessages, botMessage]);
+            console.log('json for query request: ', generatedContent)
+            // setMessages(prevMessages => [...prevMessages, botMessage]);
 
             await runQueryFromJson(generatedContent);
         } catch (error) {
@@ -232,7 +320,7 @@ const ChatBot = () => {
                 result_format: 'json_bi',
             }));
 
-            const processedData = processQueryResponse(response);
+            const processedData = await processQueryResponse(response);
 
             if (processedData?.type === 'chart') {
                 setMessages(prevMessages => [
@@ -364,20 +452,40 @@ const ChatBot = () => {
     const ChartControls = ({ message, onDimensionChange, onSortChange, onViewTypeChange }) => (
         <div style={styles.chartControls}>
             {message.dimensions && message.dimensions.length > 1 && (
-                <div style={styles.controlGroup}>
-                    <label style={styles.controlLabel}>Primary Dimension:</label>
-                    <select
-                        value={message.currentDimension}
-                        onChange={(e) => onDimensionChange(message, e.target.value)}
-                        style={styles.select}
-                    >
-                        {message.dimensions.map((dim) => (
-                            <option key={dim.name} value={dim.name}>
-                                {dim.label}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                <>
+                    <div style={styles.controlGroup}>
+                        <label style={styles.controlLabel}>Primary Dimension:</label>
+                        <select
+                            value={message.currentDimension}
+                            onChange={(e) => onDimensionChange(message, e.target.value, message.pivotDimension)}
+                            style={styles.select}
+                        >
+                            {message.dimensions.map((dim) => (
+                                <option key={dim.name} value={dim.name}>
+                                    {dim.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div style={styles.controlGroup}>
+                        <label style={styles.controlLabel}>Pivot By:</label>
+                        <select
+                            value={message.pivotDimension || ''}
+                            onChange={(e) => onDimensionChange(message, message.currentDimension, e.target.value || null)}
+                            style={styles.select}
+                        >
+                            <option value="">No Pivot</option>
+                            {message.dimensions
+                                .filter(dim => dim.name !== message.currentDimension)
+                                .map((dim) => (
+                                    <option key={dim.name} value={dim.name}>
+                                        {dim.label}
+                                    </option>
+                                ))
+                            }
+                        </select>
+                    </div>
+                </>
             )}
             <div style={styles.controlGroup}>
                 <label style={styles.controlLabel}>Sort:</label>
