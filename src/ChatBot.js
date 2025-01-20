@@ -3,7 +3,6 @@ import { ExtensionContext } from '@looker/extension-sdk-react';
 import { Bar, Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
 
-// Register Chart.js components
 ChartJS.register(
     CategoryScale,
     LinearScale,
@@ -21,20 +20,14 @@ const ChatBot = () => {
     const { core40SDK } = useContext(ExtensionContext);
 
     const convertMessagesToBulletList = (messages) => {
-        return messages
-            .map((item) => {
-                if (item.sender === "bot") {
-                    try {
-                        const parsed = JSON.parse(item.text);
-                        return `- Bot: ${parsed[0]["prompt.generated_content"].trim()}`;
-                    } catch (error) {
-                        return `- Bot: ${item.text}`;
-                    }
-                } else {
-                    return `- User: ${item.text}`;
-                }
-            })
-            .join("\n");
+        const bulletMessages = messages
+        .map((item) => {
+            if (item.sender === "user") {
+                return `- User: ${item.text}`;
+            }
+        })
+        .join("\n");
+        return bulletMessages;
     };
 
     const generateColor = (index, alpha = 0.2) => {
@@ -49,8 +42,57 @@ const ChatBot = () => {
         return colors[index % colors.length];
     };
 
+    const processQueryResponse = (response) => {
+        if (!response || !response.metadata || !response.rows) {
+            console.error('Invalid response structure');
+            return null;
+        }
+
+        const { dimensions, measures } = response.metadata.fields;
+
+        // If no dimensions, return the raw response
+        if (!dimensions || dimensions.length === 0) {
+            return {
+                type: 'text',
+                data: response.rows
+            };
+        }
+
+        const primaryDimension = dimensions[0].name;
+        
+        // Handle multiple measures with separate y-axes
+        const datasets = measures.map((measure, measureIndex) => {
+            const measureName = measure.name;
+            const groupedData = groupDataByDimension(response.rows, primaryDimension, measureName);
+            const labels = Object.keys(groupedData);
+            const values = Object.values(groupedData);
+
+            return {
+                label: measure.label,
+                data: values,
+                backgroundColor: generateColor(measureIndex),
+                borderColor: generateColor(measureIndex, 1),
+                borderWidth: 1,
+                tension: 0.1,
+                yAxisID: `y${measureIndex}`
+            };
+        });
+
+        const labels = Object.keys(groupDataByDimension(response.rows, primaryDimension, measures[0].name));
+
+        return {
+            type: 'chart',
+            data: { labels, datasets },
+            dimensions: dimensions,
+            measures: measures,
+            currentDimension: primaryDimension,
+            viewType: 'bar',
+            sortDirection: 'asc',
+            rawData: response.rows
+        };
+    };
+
     const groupDataByDimension = (rows, dimension, measure) => {
-        // Group data and calculate averages
         const groupedData = rows.reduce((acc, row) => {
             const key = row[dimension].value;
             if (!acc[key]) {
@@ -64,121 +106,32 @@ const ChatBot = () => {
             return acc;
         }, {});
 
-        // Calculate averages
         return Object.entries(groupedData).reduce((acc, [key, { sum, count }]) => {
             acc[key] = sum / count;
             return acc;
         }, {});
     };
 
-    const processQueryResponse = (response) => {
-        if (!response || !response.metadata || !response.rows) {
-            console.error('Invalid response structure');
-            return null;
-        }
-
-        const { dimensions, measures } = response.metadata.fields;
-
-        if (!dimensions || !measures || dimensions.length === 0 || measures.length === 0) {
-            console.error('No dimensions or measures found');
-            return null;
-        }
-
-        const primaryDimension = dimensions[0].name;
-        const measureName = measures[0].name;
-
-        // Group data by primary dimension
-        const groupedData = groupDataByDimension(response.rows, primaryDimension, measureName);
-        const labels = Object.keys(groupedData);
-        const values = Object.values(groupedData);
-
-        if (dimensions.length > 1) {
-            const secondaryDimension = dimensions[1].name;
-            const secondaryValues = [...new Set(response.rows.map(row => row[secondaryDimension].value))];
-
-            const datasets = secondaryValues.map((secondaryValue, index) => {
-                const filteredRows = response.rows.filter(row => row[secondaryDimension].value === secondaryValue);
-                const groupedSecondaryData = groupDataByDimension(filteredRows, primaryDimension, measureName);
-                const data = labels.map(label => groupedSecondaryData[label] || 0);
-
-                return {
-                    label: secondaryValue.toString(),
-                    data,
-                    backgroundColor: generateColor(index),
-                    borderColor: generateColor(index, 1),
-                    borderWidth: 1,
-                    tension: 0.1
-                };
-            });
-
-            return {
-                type: 'chart',
-                data: { labels, datasets },
-                dimensions: dimensions,
-                measures: measures,
-                currentDimension: primaryDimension,
-                chartType: 'bar',
-                sortDirection: 'asc'
-            };
-        } else {
-            const datasets = [{
-                label: measures[0].label,
-                data: values,
-                backgroundColor: generateColor(0),
-                borderColor: generateColor(0, 1),
-                borderWidth: 1,
-                tension: 0.1
-            }];
-
-            return {
-                type: 'chart',
-                data: { labels, datasets },
-                dimensions: dimensions,
-                measures: measures,
-                currentDimension: primaryDimension,
-                chartType: 'bar',
-                sortDirection: 'asc'
-            };
-        }
-    };
-
     const handleDimensionChange = (message, dimensionName) => {
         const response = message.queryResponse;
-        const { dimensions } = response.metadata.fields;
-        const measureName = response.metadata.fields.measures[0].name;
+        const { measures } = response.metadata.fields;
 
-        // Regroup data based on new primary dimension
-        const groupedData = groupDataByDimension(response.rows, dimensionName, measureName);
-        const labels = Object.keys(groupedData);
-        const otherDimension = dimensions.find(d => d.name !== dimensionName)?.name;
+        const labels = [...new Set(response.rows.map(row => row[dimensionName].value))];
+        
+        const datasets = measures.map((measure, measureIndex) => {
+            const groupedData = groupDataByDimension(response.rows, dimensionName, measure.name);
+            const data = labels.map(label => groupedData[label] || 0);
 
-        let datasets;
-        if (otherDimension) {
-            const secondaryValues = [...new Set(response.rows.map(row => row[otherDimension].value))];
-            datasets = secondaryValues.map((secondaryValue, index) => {
-                const filteredRows = response.rows.filter(row => row[otherDimension].value === secondaryValue);
-                const groupedSecondaryData = groupDataByDimension(filteredRows, dimensionName, measureName);
-                const data = labels.map(label => groupedSecondaryData[label] || 0);
-
-                return {
-                    label: secondaryValue.toString(),
-                    data,
-                    backgroundColor: generateColor(index),
-                    borderColor: generateColor(index, 1),
-                    borderWidth: 1,
-                    tension: 0.1
-                };
-            });
-        } else {
-            datasets = [{
-                label: response.metadata.fields.measures[0].label,
-                data: Object.values(groupedData),
-                backgroundColor: generateColor(0),
-                borderColor: generateColor(0, 1),
+            return {
+                label: measure.label,
+                data,
+                backgroundColor: generateColor(measureIndex),
+                borderColor: generateColor(measureIndex, 1),
                 borderWidth: 1,
-                tension: 0.1
-            }];
-        }
+                tension: 0.1,
+                yAxisID: `y${measureIndex}`
+            };
+        });
 
         const updatedChartData = { labels, datasets };
         setMessages(prevMessages => prevMessages.map(msg =>
@@ -194,37 +147,35 @@ const ChatBot = () => {
         const newData = { ...message.chartData };
         const sortMultiplier = direction === 'asc' ? 1 : -1;
 
-        // Get the first dataset's values for sorting
-        const sortValues = newData.datasets[0].data;
-
-        // Create array of label-value pairs for sorting
-        const pairs = newData.labels.map((label, index) => ({
+        // Calculate total values for each label (sum across all datasets)
+        const labelTotals = newData.labels.map((label, index) => ({
             label,
-            values: newData.datasets.map(ds => ds.data[index])
+            total: newData.datasets.reduce((sum, dataset) => sum + dataset.data[index], 0),
+            originalIndex: index
         }));
 
-        // Sort pairs based on the first dataset's values
-        pairs.sort((a, b) => (a.values[0] - b.values[0]) * sortMultiplier);
+        // Sort labels based on totals
+        labelTotals.sort((a, b) => (a.total - b.total) * sortMultiplier);
 
-        // Reconstruct labels and datasets
-        newData.labels = pairs.map(pair => pair.label);
-        newData.datasets = newData.datasets.map(dataset => ({
+        // Reconstruct the data maintaining all original data points
+        const newLabels = labelTotals.map(item => item.label);
+        const newDatasets = newData.datasets.map(dataset => ({
             ...dataset,
-            data: pairs.map(pair => pair.values[dataset.data.indexOf(pair.values[0])])
+            data: labelTotals.map(item => dataset.data[item.originalIndex])
         }));
 
         setMessages(prevMessages => prevMessages.map(msg =>
             msg === message ? {
                 ...msg,
-                chartData: newData,
+                chartData: { ...newData, labels: newLabels, datasets: newDatasets },
                 sortDirection: direction
             } : msg
         ));
     };
 
-    const handleChartTypeChange = (message, chartType) => {
+    const handleViewTypeChange = (message, viewType) => {
         setMessages(prevMessages => prevMessages.map(msg =>
-            msg === message ? { ...msg, chartType } : msg
+            msg === message ? { ...msg, viewType } : msg
         ));
     };
 
@@ -241,8 +192,8 @@ const ChatBot = () => {
                     view: 'chat_prompt',
                     fields: ['chat_prompt.generated_content'],
                     filters: {
-                        'chat_prompt.previous_messages': convertMessagesToBulletList(messages),
-                        'chat_prompt.prompt_input': input,
+                        'chat_prompt.previous_messages': convertMessagesToBulletList(messages).replace(/,/g, ''),
+                        'chat_prompt.prompt_input': input.replace(/,/g, ''),
                     },
                 },
                 result_format: 'json',
@@ -293,9 +244,19 @@ const ChatBot = () => {
                         dimensions: processedData.dimensions,
                         measures: processedData.measures,
                         currentDimension: processedData.currentDimension,
-                        chartType: processedData.chartType,
+                        viewType: processedData.viewType,
                         sortDirection: processedData.sortDirection,
-                        queryResponse: response
+                        queryResponse: response,
+                        rawData: processedData.rawData
+                    }
+                ]);
+            } else if (processedData?.type === 'text') {
+                setMessages(prevMessages => [
+                    ...prevMessages,
+                    {
+                        sender: 'bot',
+                        type: 'text',
+                        text: JSON.stringify(processedData.data, null, 2)
                     }
                 ]);
             }
@@ -308,50 +269,99 @@ const ChatBot = () => {
         }
     };
 
-    const chartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                position: 'top',
-                align: 'start',
-                labels: {
-                    usePointStyle: true,
-                    padding: 15,
-                    boxWidth: 10,
-                }
-            },
-            title: {
-                display: true,
-                text: 'Data Visualization',
-                padding: {
-                    top: 10,
-                    bottom: 20
-                },
-                font: {
-                    size: 16
-                }
-            }
-        },
-        scales: {
-            y: {
-                beginAtZero: true,
-                ticks: {
-                    callback: function (value) {
-                        return value.toLocaleString();
-                    }
-                }
-            },
+    const getChartOptions = (measures) => {
+        const scales = {
             x: {
                 ticks: {
                     maxRotation: 45,
                     minRotation: 45
                 }
             }
-        }
+        };
+
+        // Create separate y-axes for each measure
+        measures.forEach((measure, index) => {
+            scales[`y${index}`] = {
+                type: 'linear',
+                display: true,
+                position: index === 0 ? 'left' : 'right',
+                beginAtZero: true,
+                grid: {
+                    drawOnChartArea: index === 0,
+                },
+                title: {
+                    display: true,
+                    text: measure.label
+                },
+                ticks: {
+                    callback: function(value) {
+                        return value.toLocaleString();
+                    }
+                }
+            };
+        });
+
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                    align: 'start',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15,
+                        boxWidth: 10,
+                    }
+                },
+                title: {
+                    display: true,
+                    text: 'Data Visualization',
+                    padding: {
+                        top: 10,
+                        bottom: 20
+                    },
+                    font: {
+                        size: 16
+                    }
+                }
+            },
+            scales
+        };
     };
 
-    const ChartControls = ({ message, onDimensionChange, onSortChange, onChartTypeChange }) => (
+    const DataTable = ({ data, dimensions, measures }) => (
+        <div style={styles.tableContainer}>
+            <table style={styles.table}>
+                <thead>
+                    <tr>
+                        {dimensions.map(dim => (
+                            <th key={dim.name} style={styles.tableHeader}>{dim.label}</th>
+                        ))}
+                        {measures.map(measure => (
+                            <th key={measure.name} style={styles.tableHeader}>{measure.label}</th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {data.map((row, index) => (
+                        <tr key={index}>
+                            {dimensions.map(dim => (
+                                <td key={dim.name} style={styles.tableCell}>{row[dim.name].value}</td>
+                            ))}
+                            {measures.map(measure => (
+                                <td key={measure.name} style={styles.tableCell}>
+                                    {row[measure.name].value.toLocaleString()}
+                                </td>
+                            ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+
+    const ChartControls = ({ message, onDimensionChange, onSortChange, onViewTypeChange }) => (
         <div style={styles.chartControls}>
             {message.dimensions && message.dimensions.length > 1 && (
                 <div style={styles.controlGroup}>
@@ -381,12 +391,13 @@ const ChatBot = () => {
                 </select>
             </div>
             <div style={styles.controlGroup}>
-                <label style={styles.controlLabel}>Chart Type:</label>
+                <label style={styles.controlLabel}>View Type:</label>
                 <select
-                    value={message.chartType}
-                    onChange={(e) => onChartTypeChange(message, e.target.value)}
+                    value={message.viewType}
+                    onChange={(e) => onViewTypeChange(message, e.target.value)}
                     style={styles.select}
                 >
+                    <option value="table">Table</option>
                     <option value="bar">Bar Chart</option>
                     <option value="line">Line Chart</option>
                 </select>
@@ -395,23 +406,44 @@ const ChatBot = () => {
     );
 
     const MessageContent = ({ message }) => {
-        if (message.type === 'chart' && message.chartData) {
-            const ChartComponent = message.chartType === 'line' ? Line : Bar;
-            return (
-                <div style={styles.chartContainer}>
-                    <ChartControls
-                        message={message}
-                        onDimensionChange={handleDimensionChange}
-                        onSortChange={handleSortChange}
-                        onChartTypeChange={handleChartTypeChange}
-                    />
-                    <div style={styles.messageChart}>
-                        <ChartComponent data={message.chartData} options={chartOptions} />
+        if (message.type === 'chart') {
+            if (message.viewType === 'table') {
+                return (
+                    <div style={styles.chartContainer}>
+                        <ChartControls
+                            message={message}
+                            onDimensionChange={handleDimensionChange}
+                            onSortChange={handleSortChange}
+                            onViewTypeChange={handleViewTypeChange}
+                        />
+                        <DataTable 
+                            data={message.rawData}
+                            dimensions={message.dimensions}
+                            measures={message.measures}
+                        />
                     </div>
-                </div>
-            );
+                );
+            } else {
+                const ChartComponent = message.viewType === 'line' ? Line : Bar;
+                return (
+                    <div style={styles.chartContainer}>
+                        <ChartControls
+                            message={message}
+                            onDimensionChange={handleDimensionChange}
+                            onSortChange={handleSortChange}
+                            onViewTypeChange={handleViewTypeChange}
+                        />
+                        <div style={styles.messageChart}>
+                            <ChartComponent 
+                                data={message.chartData} 
+                                options={getChartOptions(message.measures)} 
+                            />
+                        </div>
+                    </div>
+                );
+            }
         }
-        return <div>{message.text}</div>;
+        return <pre style={styles.preformatted}>{message.text}</pre>;
     };
 
     return (
@@ -424,7 +456,8 @@ const ChatBot = () => {
                             ...styles.message,
                             alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
                             backgroundColor: msg.sender === 'user' ? '#d1f4ff' : '#f4f4f4',
-                            width: msg.type === 'chart' ? '80%' : undefined,
+                            width: msg.type === 'chart' ? '90%' : 'auto',
+                            maxWidth: msg.type === 'chart' ? '90%' : '60%',
                         }}
                     >
                         <MessageContent message={msg} />
@@ -456,73 +489,73 @@ const styles = {
     chatBotContainer: {
         display: 'flex',
         flexDirection: 'column',
-        height: '70%',
-        width: '80%',
+        height: '80%',
+        width: '90%',
         border: '1px solid #ccc',
         borderRadius: '8px',
         overflow: 'hidden',
         fontFamily: 'Arial, sans-serif',
         position: 'absolute',
-        left: '10%',
+        left: '5%',
         backgroundColor: '#fff',
         boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
     },
     chatMessages: {
-        height: '60vh',
+        height: '70vh',
         width: '100%',
         flex: 1,
         padding: '10px',
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
+        gap: '8px',
         backgroundColor: '#fafafa',
     },
     chartContainer: {
         width: '100%',
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px',
+        gap: '8px',
         backgroundColor: '#fff',
         borderRadius: '8px',
-        padding: '15px',
+        padding: '12px',
         boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
     },
     chartControls: {
         display: 'flex',
-        gap: '20px',
-        padding: '15px',
+        gap: '15px',
+        padding: '10px',
         backgroundColor: '#f8f9fa',
-        borderRadius: '8px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-        marginBottom: '15px',
+        borderRadius: '6px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        marginBottom: '10px',
         flexWrap: 'wrap',
     },
     controlGroup: {
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
-        minWidth: '200px',
+        gap: '8px',
+        minWidth: '180px',
     },
     controlLabel: {
-        fontSize: '14px',
+        fontSize: '13px',
         fontWeight: '600',
         color: '#444',
         whiteSpace: 'nowrap',
     },
     select: {
-        padding: '8px 12px',
-        borderRadius: '6px',
+        padding: '6px 10px',
+        borderRadius: '4px',
         border: '1px solid #ddd',
         backgroundColor: '#fff',
-        fontSize: '14px',
+        fontSize: '13px',
         color: '#333',
         cursor: 'pointer',
-        minWidth: '120px',
+        minWidth: '100px',
         appearance: 'none',
         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M3 5h6L6 9z'/%3E%3C/svg%3E")`,
         backgroundRepeat: 'no-repeat',
-        backgroundPosition: 'right 12px center',
+        backgroundPosition: 'right 8px center',
         backgroundSize: '12px',
         transition: 'all 0.2s ease',
         flex: 1,
@@ -530,54 +563,72 @@ const styles = {
     messageChart: {
         height: '300px',
         width: '100%',
-        padding: '10px',
+        padding: '8px',
     },
     message: {
-        maxWidth: '60%',
         padding: '8px 12px',
-        borderRadius: '12px',
-        fontSize: '14px',
-        marginBottom: '10px',
+        borderRadius: '8px',
+        fontSize: '13px',
+        marginBottom: '4px',
         boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
     },
     inputSection: {
         display: 'flex',
-        padding: '15px',
+        padding: '12px',
         borderTop: '1px solid #eee',
         backgroundColor: '#fff',
-        gap: '10px',
+        gap: '8px',
     },
     input: {
         flex: 1,
-        padding: '12px',
-        fontSize: '14px',
-        borderRadius: '6px',
+        padding: '8px 12px',
+        fontSize: '13px',
+        borderRadius: '4px',
         border: '1px solid #ddd',
-        minHeight: '30px',
+        minHeight: '24px',
+        maxHeight: '80px',
         resize: 'none',
         overflow: 'auto',
         transition: 'border-color 0.2s ease',
-        '&:focus': {
-            outline: 'none',
-            borderColor: '#007bff',
-            boxShadow: '0 0 0 2px rgba(0,123,255,0.25)',
-        },
     },
     button: {
         padding: '8px 16px',
-        fontSize: '14px',
-        borderRadius: '6px',
+        fontSize: '13px',
+        borderRadius: '4px',
         backgroundColor: '#007BFF',
         color: '#fff',
         border: 'none',
         cursor: 'pointer',
         transition: 'background-color 0.2s ease',
-        '&:hover': {
-            backgroundColor: '#0056b3',
-        },
-        '&:active': {
-            backgroundColor: '#004085',
-        },
+    },
+    preformatted: {
+        margin: 0,
+        whiteSpace: 'pre-wrap',
+        fontSize: '13px',
+        fontFamily: 'monospace',
+    },
+    tableContainer: {
+        width: '100%',
+        overflowX: 'auto',
+        marginTop: '8px',
+    },
+    table: {
+        width: '100%',
+        borderCollapse: 'collapse',
+        fontSize: '13px',
+    },
+    tableHeader: {
+        padding: '8px 12px',
+        backgroundColor: '#f8f9fa',
+        borderBottom: '2px solid #dee2e6',
+        textAlign: 'left',
+        fontWeight: '600',
+        whiteSpace: 'nowrap',
+    },
+    tableCell: {
+        padding: '6px 12px',
+        borderBottom: '1px solid #dee2e6',
+        whiteSpace: 'nowrap',
     }
 };
 

@@ -155,51 +155,49 @@ const Fields = () => {
                     }
                 });
             });
-
+    
             console.log('Selected fields to upload:', selectedFields);
-
-            const mergeStatements = selectedFields.map(field => `
-                MERGE \`chatter.fields\` T
-                USING (SELECT 
-                    '${field.model.replace(/'/g, "\\'")}' as model,
-                    '${field.explore.replace(/'/g, "\\'")}' as explore,
-                    '${field.view.replace(/'/g, "\\'")}' as view,
-                    '${field.field.replace(/'/g, "\\'")}' as field,
-                    '${field.field_type.replace(/'/g, "\\'")}' as field_type,
-                    TRUE as available_in_chatter
-                ) S
-                ON T.model = S.model 
-                    AND T.explore = S.explore 
-                    AND T.field = S.field
-                WHEN MATCHED THEN
-                    UPDATE SET available_in_chatter = TRUE
-                WHEN NOT MATCHED THEN
-                    INSERT (model, explore, view, field, field_type, available_in_chatter)
-                    VALUES (S.model, S.explore, S.view, S.field, S.field_type, S.available_in_chatter)
-            `).join(';\n');
-
-            const sqlQuery = `
-                -- BEGIN
-                    ${mergeStatements}
-                -- END;
+    
+            // Generate SQL to delete and re-insert rows
+            const deleteQuery = `
+                DELETE FROM \`chatter.fields\`
+                WHERE model = '${selectedModel.replace(/'/g, "\\'")}'
+                  AND explore = '${selectedExplore.replace(/'/g, "\\'")}'
             `;
-
+    
+            const insertRows = selectedFields.map(field => `(
+                '${field.model.replace(/'/g, "\\'")}',
+                '${field.explore.replace(/'/g, "\\'")}',
+                '${field.view.replace(/'/g, "\\'")}',
+                '${field.field.replace(/'/g, "\\'")}',
+                '${field.field_type.replace(/'/g, "\\'")}',
+                TRUE
+            )`).join(',\n');
+    
+            const insertQuery = `
+                INSERT INTO \`chatter.fields\` (model, explore, view, field, field_type, available_in_chatter)
+                VALUES ${insertRows};
+            `;
+    
+            const sqlQuery = `${deleteQuery};\n${insertQuery}`;
+    
             console.log('Generated SQL Query:', sqlQuery);
-
+    
+            // Execute the SQL query
             const sqlQueryResponse = await core40SDK.ok(
                 core40SDK.create_sql_query({
                     model_name: selectedModel,
                     sql: sqlQuery,
                 })
             );
-
+    
             console.log('SQL Query Creation Response:', sqlQueryResponse);
-
+    
             const { slug } = sqlQueryResponse;
             const runResponse = await core40SDK.ok(
                 core40SDK.run_sql_query(slug, 'json')
             );
-
+    
             console.log('Run Response:', runResponse);
             alert('Fields updated successfully!');
             
@@ -210,6 +208,8 @@ const Fields = () => {
             alert('Failed to update fields. Please try again.');
         }
     };
+    
+    
 
     const handleIncludeChange = (section, name) => {
         setSelectedItems((prev) => ({
