@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
 import { Bar, Line } from 'react-chartjs-2';
+import { Loader } from 'lucide-react';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
 
 ChartJS.register(
@@ -17,6 +18,8 @@ ChartJS.register(
 const ChatBot = () => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
 
     const convertMessagesToBulletList = (messages) => {
@@ -85,7 +88,7 @@ const ChatBot = () => {
         };
     };
 
-    const processDataWithPivot = (rows, primaryDim, pivotDim, measures) => {
+    const processDataWithPivot = (rows, primaryDim, pivotDim, measures, viewType) => {
         if (!pivotDim) {
             // If no pivot dimension, process normally
             const datasets = measures.map((measure, measureIndex) => {
@@ -109,8 +112,8 @@ const ChatBot = () => {
         }
 
         // Process with pivot
-        const uniquePivotValues = [...new Set(rows.map(row => row[pivotDim].value))];
-        const primaryValues = [...new Set(rows.map(row => row[primaryDim].value))];
+        const uniquePivotValues = [...new Set(rows.map(row => row[pivotDim].value))].sort();
+        const primaryValues = [...new Set(rows.map(row => row[primaryDim].value))].sort();
 
         const datasets = [];
         measures.forEach((measure, measureIndex) => {
@@ -131,7 +134,8 @@ const ChatBot = () => {
                     borderColor: generateColor(measureIndex * uniquePivotValues.length + pivotIndex, 1),
                     borderWidth: 1,
                     tension: 0.1,
-                    yAxisID: `y${measureIndex}`
+                    yAxisID: `y${measureIndex}`,
+                    type: viewType === 'line' ? 'line' : undefined, // Only set type for line charts
                 });
             });
         });
@@ -167,7 +171,8 @@ const ChatBot = () => {
             response.rows,
             dimensionName,
             pivotDimension,
-            measures
+            measures,
+            message.viewType
         );
 
         setMessages(prevMessages => prevMessages.map(msg =>
@@ -211,14 +216,26 @@ const ChatBot = () => {
     };
 
     const handleViewTypeChange = (message, viewType) => {
+        const processedData = processDataWithPivot(
+            message.queryResponse.rows,
+            message.currentDimension,
+            message.pivotDimension,
+            message.measures,
+            viewType
+        );
+
         setMessages(prevMessages => prevMessages.map(msg =>
-            msg === message ? { ...msg, viewType } : msg
+            msg === message ? { 
+                ...msg, 
+                viewType,
+                chartData: processedData
+            } : msg
         ));
     };
 
     const summariseJSONResponse = async (json_input) => {
+        setIsSummarizing(true);
         try {
-            // Convert the JSON input to a string and clean it up
             const jsonString = JSON.stringify(json_input, null, 2);
             
             const summaryResponse = await core40SDK.ok(core40SDK.run_inline_query({
@@ -238,10 +255,9 @@ const ChatBot = () => {
                 let generatedContent = summaryResponse[0]["summary_prompt.generated_content"]?.trim();
                 
                 if (generatedContent) {
-                    // Clean up the generated content by removing commas and special characters
                     generatedContent = generatedContent
-                        .replace(/[,]/g, '') // Remove commas
-                        .replace(/[^\w\s.()?()-]/g, '') // Remove special characters except for ?, periods, parentheses, and hyphens
+                        .replace(/[,]/g, '')
+                        .replace(/[^\w\s.()?()-]/g, '')
                         .trim();
                     
                     const summaryMessage = { 
@@ -252,7 +268,6 @@ const ChatBot = () => {
                     setMessages(prevMessages => [...prevMessages, summaryMessage]);
                 }
             }
-    
         } catch (error) {
             console.error('Error in summariseJSONResponse:', error);
             setMessages(prevMessages => [
@@ -263,6 +278,8 @@ const ChatBot = () => {
                     text: 'Error generating summary. Please try again.' 
                 }
             ]);
+        } finally {
+            setIsSummarizing(false);
         }
     };
 
@@ -429,36 +446,111 @@ const ChatBot = () => {
         };
     };
 
-    const DataTable = ({ data, dimensions, measures }) => (
-        <div style={styles.tableContainer}>
-            <table style={styles.table}>
-                <thead>
-                    <tr>
-                        {dimensions.map(dim => (
-                            <th key={dim.name} style={styles.tableHeader}>{dim.label}</th>
-                        ))}
-                        {measures.map(measure => (
-                            <th key={measure.name} style={styles.tableHeader}>{measure.label}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {data.map((row, index) => (
-                        <tr key={index}>
-                            {dimensions.map(dim => (
-                                <td key={dim.name} style={styles.tableCell}>{row[dim.name].value}</td>
+    const DataTable = ({ data, dimensions, measures, pivotDimension }) => {
+        // If there's no pivot dimension, render the regular table
+        if (!pivotDimension) {
+            return (
+                <div style={styles.tableContainer}>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                {dimensions.map(dim => (
+                                    <th key={dim.name} style={styles.tableHeader}>{dim.label}</th>
+                                ))}
+                                {measures.map(measure => (
+                                    <th key={measure.name} style={styles.tableHeader}>{measure.label}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.map((row, index) => (
+                                <tr key={index}>
+                                    {dimensions.map(dim => (
+                                        <td key={dim.name} style={styles.tableCell}>{row[dim.name].value}</td>
+                                    ))}
+                                    {measures.map(measure => (
+                                        <td key={measure.name} style={styles.tableCell}>
+                                            {row[measure.name].value.toLocaleString()}
+                                        </td>
+                                    ))}
+                                </tr>
                             ))}
-                            {measures.map(measure => (
-                                <td key={measure.name} style={styles.tableCell}>
-                                    {row[measure.name].value.toLocaleString()}
-                                </td>
+                        </tbody>
+                    </table>
+                </div>
+            );
+        }
+
+        // Create pivoted table structure
+        const primaryDimension = dimensions.find(d => d.name !== pivotDimension);
+        const primaryValues = [...new Set(data.map(row => row[primaryDimension.name].value))].sort();
+        const pivotValues = [...new Set(data.map(row => row[pivotDimension].value))].sort();
+
+        // Create a lookup for cell values and calculate min/max for heatmap
+        const cellLookup = {};
+        let minValue = Infinity;
+        let maxValue = -Infinity;
+
+        data.forEach(row => {
+            const primaryKey = row[primaryDimension.name].value;
+            const pivotKey = row[pivotDimension].value;
+            
+            measures.forEach(measure => {
+                const value = row[measure.name].value;
+                cellLookup[`${primaryKey}-${pivotKey}-${measure.name}`] = value;
+                minValue = Math.min(minValue, value);
+                maxValue = Math.max(maxValue, value);
+            });
+        });
+
+        // Function to get cell background color for heatmap
+        const getCellBackground = (value) => {
+            const percentage = (value - minValue) / (maxValue - minValue);
+            return `rgba(0, 0, 255, ${percentage * 0.5})`; // Blue heatmap
+        };
+
+        return (
+            <div style={styles.tableContainer}>
+                <table style={styles.table}>
+                    <thead>
+                        <tr>
+                            <th style={styles.tableHeader}>{primaryDimension.label}</th>
+                            {pivotValues.map(pivotValue => (
+                                measures.map(measure => (
+                                    <th key={`${pivotValue}-${measure.name}`} style={styles.tableHeader}>
+                                        {`${pivotValue} - ${measure.label}`}
+                                    </th>
+                                ))
                             ))}
                         </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
+                    </thead>
+                    <tbody>
+                        {primaryValues.map(primaryValue => (
+                            <tr key={primaryValue}>
+                                <td style={styles.tableCell}>{primaryValue}</td>
+                                {pivotValues.map(pivotValue => (
+                                    measures.map(measure => {
+                                        const value = cellLookup[`${primaryValue}-${pivotValue}-${measure.name}`] || 0;
+                                        return (
+                                            <td 
+                                                key={`${pivotValue}-${measure.name}`} 
+                                                style={{
+                                                    ...styles.tableCell,
+                                                    backgroundColor: getCellBackground(value)
+                                                }}
+                                            >
+                                                {value.toLocaleString()}
+                                            </td>
+                                        );
+                                    })
+                                ))}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
 
     const ChartControls = ({ message, onDimensionChange, onSortChange, onViewTypeChange }) => (
         <div style={styles.chartControls}>
@@ -539,6 +631,7 @@ const ChatBot = () => {
                             data={message.rawData}
                             dimensions={message.dimensions}
                             measures={message.measures}
+                            pivotDimension={message.pivotDimension}
                         />
                     </div>
                 );
@@ -562,7 +655,17 @@ const ChatBot = () => {
                 );
             }
         }
-        return <pre style={styles.preformatted}>{message.text}</pre>;
+        return (
+            <>
+                <pre style={styles.preformatted}>{message.text}</pre>
+                {isSummarizing && message.sender === 'bot' && message.type === 'text' && (
+                    <div style={styles.loadingSpinner}>
+                        <Loader className="animate-spin" size={16} />
+                        <span>Generating summary...</span>
+                    </div>
+                )}
+            </>
+        );
     };
 
     return (
@@ -596,8 +699,16 @@ const ChatBot = () => {
                     style={styles.input}
                     placeholder="Type your message..."
                 />
-                <button onClick={handleSendMessage} style={styles.button}>
-                    Send
+                <button 
+                    onClick={handleSendMessage} 
+                    style={styles.button}
+                    disabled={isLoading}
+                >
+                    {isLoading ? (
+                        <Loader className="animate-spin" size={16} />
+                    ) : (
+                        'Send'
+                    )}
                 </button>
             </div>
         </div>
@@ -748,7 +859,15 @@ const styles = {
         padding: '6px 12px',
         borderBottom: '1px solid #dee2e6',
         whiteSpace: 'nowrap',
-    }
+    },
+    loadingSpinner: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        fontSize: '12px',
+        color: '#666',
+        marginTop: '8px'
+    },
 };
 
 export default ChatBot;
