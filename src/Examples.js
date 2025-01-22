@@ -7,13 +7,14 @@ const Examples = () => {
     const [selectedExplore, setSelectedExplore] = useState('');
     const [models, setModels] = useState([]);
     const [explores, setExplores] = useState([]);
-    const [queryResults, setQueryResults] = useState(null);
-    const [secondQueryResults, setSecondQueryResults] = useState([]);
+    const [examplesData, setExamplesData] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [modalIsOpen, setModalIsOpen] = useState(false);
     const [jsonEditData, setJsonEditData] = useState({});
     const [editIndex, setEditIndex] = useState(null);
     const [editQuestion, setEditQuestion] = useState('');
+    const [generatedExamplesModal, setGeneratedExamplesModal] = useState(false);
+    const [generatedExamples, setGeneratedExamples] = useState([]);
     const { core40SDK } = useContext(ExtensionContext);
 
     const defaultJson = {
@@ -24,6 +25,34 @@ const Examples = () => {
         "query.limit": "10",
         "query.column_limit": "50",
         "query.sorts": ["VIEW_NAME.DIMENSION_NAME DESC"]
+    };
+
+    const isValidJsonFormat = (jsonObj) => {
+        return true;
+        try {
+            const expectedKeys = [
+                "query.model",
+                "query.view",
+                "query.fields",
+                "query.filters",
+                "query.limit",
+                "query.column_limit",
+                "query.sorts",
+            ];
+    
+            for (const key in jsonObj) {
+                if (!expectedKeys.includes(key)) return false; // Invalid key present
+            }
+    
+            // Validate specific fields if they exist
+            if (jsonObj["query.fields"] && !Array.isArray(JSON.parse(jsonObj["query.fields"]))) return false;
+            if (jsonObj["query.filters"] && typeof JSON.parse(jsonObj["query.filters"]) !== "object") return false;
+            if (jsonObj["query.sorts"] && !Array.isArray(JSON.parse(jsonObj["query.sorts"]))) return false;
+    
+            return true;
+        } catch {
+            return false;
+        }
     };
 
     useEffect(() => {
@@ -56,7 +85,7 @@ const Examples = () => {
         const fetchExamplesData = async () => {
             if (selectedModel) {
                 try {
-                    const examplesData = await core40SDK.ok(
+                    const data = await core40SDK.ok(
                         core40SDK.run_inline_query({
                             body: {
                                 model: "chatter",
@@ -70,7 +99,7 @@ const Examples = () => {
                             result_format: 'json',
                         })
                     );
-                    setSecondQueryResults(examplesData);
+                    setExamplesData(data);
                 } catch (error) {
                     console.error('Error fetching examples data:', error);
                 }
@@ -86,12 +115,14 @@ const Examples = () => {
                 const processedItem = { ...item };
                 delete processedItem['query.id'];
                 delete processedItem['history.count'];
-
+    
                 const formattedItem = JSON.stringify(processedItem)
                     .replace(/\\u0027/g, "'")
-                    .replace(/\\/g, "")
+                    .replace(/\\/g, "") // Remove backslashes
                     .replace(/"/g, "'");
-
+                
+                // const formattedItem = cleanJsonString(JSON.stringify(processedItem))
+    
                 try {
                     const response = await Promise.race([
                         core40SDK.ok(
@@ -111,23 +142,13 @@ const Examples = () => {
                             setTimeout(() => reject(new Error('Request timed out')), 15000)
                         ),
                     ]);
-
+    
                     const question = response[0]?.["json_prompt.generated_content"] || "No generated content";
                     results.push({
                         question,
-                        url: JSON.stringify({
-                            ...processedItem,
-                            "query.fields": Array.isArray(processedItem["query.fields"])
-                                ? processedItem["query.fields"]
-                                : JSON.parse(processedItem["query.fields"] || "[]"),
-                            "query.filters": typeof processedItem["query.filters"] === "string"
-                                ? JSON.parse(processedItem["query.filters"] || "{}")
-                                : processedItem["query.filters"],
-                            "query.sorts": typeof processedItem["query.sorts"] === "string"
-                                ? JSON.parse(processedItem["query.sorts"] || "[]")
-                                : processedItem["query.sorts"],
-                        }),
+                        json: processedItem
                     });
+                    console.log('results: ', results)
                 } catch (error) {
                     console.error('Error processing item:', error);
                 }
@@ -139,68 +160,51 @@ const Examples = () => {
         }
     };
 
-    const handleEditJson = (index) => {
-        const currentJson = secondQueryResults[index]['examples.output_json'] || JSON.stringify(defaultJson, null, 2);
-        const currentQuestion = secondQueryResults[index]['examples.input_question'] || '';
-        try {
-            const parsedJson = JSON.parse(currentJson);
-            setJsonEditData(parsedJson);
-            setEditQuestion(currentQuestion);
-            setEditIndex(index);
-            setModalIsOpen(true);
-        } catch (error) {
-            alert('Invalid JSON format! Please correct it manually.');
+    const handleFetchExamples = async () => {
+        if (selectedModel) {
+            try {
+                const data = await core40SDK.ok(
+                    core40SDK.run_inline_query({
+                        body: {
+                            model: "chatter",
+                            view: "examples",
+                            fields: ["examples.input_question", "examples.output_json"],
+                            filters: {
+                                'examples.explore': selectedExplore,
+                                'examples.model': selectedModel
+                            }
+                        },
+                        result_format: 'json',
+                    })
+                );
+                setExamplesData(data);
+            } catch (error) {
+                console.error('Error fetching examples data:', error);
+            }
         }
     };
 
-    const handleModalSave = () => {
-        try {
-            // Convert JSON data to a single-line string and remove escaping for double quotes
-            const updatedJsonString = JSON.stringify(jsonEditData)
-                .replace(/\\"/g, '"') // Remove escape backslashes for double quotes
-                .replace(/\\n|\\t|\\r/g, ''); // Remove any potential escaped newlines, tabs, or carriage returns
-    
-            const updatedRows = [...secondQueryResults];
-    
-            // Update the specific row with the edited JSON and question
-            updatedRows[editIndex] = {
-                'examples.output_json': updatedJsonString,
-                'examples.input_question': editQuestion,
-            };
-    
-            // Save changes and close the modal
-            setSecondQueryResults(updatedRows);
-            setModalIsOpen(false);
-        } catch (error) {
-            console.error('Error saving modal data:', error);
-            alert('Failed to save changes. Please ensure the JSON is valid.');
-        }
-    };
-    
-    
-
-    const handleJsonFieldChange = (key, value) => {
-        setJsonEditData(prev => {
-            const newData = { ...prev };
-            if (key === 'query.filters') {
+    const formatJson = (jsonObj) => {
+        const formatted = {};
+        for (const [key, value] of Object.entries(jsonObj)) {
+            if (Array.isArray(value)) {
+                formatted[key] = value;
+            } else if (typeof value === 'object' && value !== null) {
+                formatted[key] = formatJson(value);
+            } else if (typeof value === 'string' && value.includes('[') && value.includes(']')) {
                 try {
-                    newData[key] = JSON.parse(value);
-                } catch (error) {
-                    newData[key] = value;
+                    formatted[key] = JSON.parse(value);
+                } catch (e) {
+                    formatted[key] = value;
                 }
             } else {
-                newData[key] = value;
+                formatted[key] = value;
             }
-            return newData;
-        });
+        }
+        return formatted;
     };
 
-    const handleDeleteRow = (index) => {
-        const updatedRows = secondQueryResults.filter((_, i) => i !== index);
-        setSecondQueryResults(updatedRows);
-    };
-
-    const handleRunQuery = async () => {
+    const handleGenerateExamples = async () => {
         if (!selectedModel || !selectedExplore) return;
 
         setIsLoading(true);
@@ -227,110 +231,179 @@ const Examples = () => {
                             'query.view': selectedExplore
                         },
                         sorts: ["history.count desc"],
-                        limit: 2
+                        limit: 3
                     },
                     result_format: 'json',
                 })
             );
 
             const processedResults = await processItems(response);
-            const formattedOutput = processedResults.map(item => (
-                `
-Question:
-${item.question}
-
-Output JSON:
-${item.url}
-----------------------------------------`
-            )).join("\n");
-
-            setQueryResults(formattedOutput);
+            setGeneratedExamples(processedResults);
+            setGeneratedExamplesModal(true);
         } catch (error) {
-            console.error('Error fetching Looker data:', error);
-            setQueryResults('Error fetching data. Please try again.');
+            console.error('Error generating examples:', error);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleCellChange = (e, index, column) => {
-        const updatedData = [...secondQueryResults];
-        updatedData[index][column] = e.target.innerText;
-        setSecondQueryResults(updatedData);
+    const handleAddGeneratedExample = (example) => {
+        const formattedJson = formatJson(example.json);
+        setExamplesData([
+            ...examplesData,
+            {
+                'examples.input_question': example.question,
+                'examples.output_json': JSON.stringify(formattedJson).replace(/\\"/g, '"').replace(/\\n|\\t|\\r/g, '')
+            }
+        ]);
+    };
+
+    const handleEditJson = (index) => {
+        const currentJson = examplesData[index]['examples.output_json'] || JSON.stringify(defaultJson, null, 2);
+        const currentQuestion = examplesData[index]['examples.input_question'] || '';
+        try {
+            const parsedJson = JSON.parse(currentJson);
+            setJsonEditData(parsedJson);
+            setEditQuestion(currentQuestion);
+            setEditIndex(index);
+            setModalIsOpen(true);
+        } catch (error) {
+            alert('Invalid JSON format! Please correct it manually.');
+        }
+    };
+
+    const handleCellEdit = (index, field, value) => {
+        const updatedRows = [...examplesData];
+        updatedRows[index][`examples.${field}`] = value;
+        setExamplesData(updatedRows);
+    };
+
+    const handleModalSave = () => {
+        try {
+            const updatedJsonString = JSON.stringify(jsonEditData)
+                .replace(/\\"/g, '"')
+                .replace(/\\n|\\t|\\r/g, '');
+    
+            const parsedJson = JSON.parse(updatedJsonString);
+
+            console.log(parsedJson)
+    
+            if (!isValidJsonFormat(parsedJson)) {
+                alert("Invalid JSON format! Please ensure it matches the required structure.");
+                return;
+            }
+    
+            const updatedRows = [...examplesData];
+            updatedRows[editIndex] = {
+                'examples.output_json': updatedJsonString,
+                'examples.input_question': editQuestion,
+            };
+    
+            setExamplesData(updatedRows);
+            setModalIsOpen(false);
+        } catch (error) {
+            console.error('Error saving modal data:', error);
+            alert('Failed to save changes. Please ensure the JSON is valid.');
+        }
+    };
+
+    const handleJsonFieldChange = (key, value) => {
+        setJsonEditData(prev => {
+            const newData = { ...prev };
+            if (key === 'query.filters') {
+                try {
+                    newData[key] = JSON.parse(value);
+                } catch (error) {
+                    newData[key] = value;
+                }
+            } else {
+                newData[key] = value;
+            }
+            return newData;
+        });
+    };
+
+    const handleDeleteRow = (index) => {
+        const updatedRows = examplesData.filter((_, i) => i !== index);
+        setExamplesData(updatedRows);
     };
 
     const handleAddRow = () => {
-        setSecondQueryResults([
-            ...secondQueryResults,
+        setExamplesData([
+            ...examplesData,
             { 'examples.input_question': '', 'examples.output_json': '' }
         ]);
     };
 
     const handleUpload = async () => {
-        if (!secondQueryResults || secondQueryResults.length === 0) {
+        if (!examplesData || examplesData.length === 0) {
             alert('No data to upload. Please add rows first.');
             return;
         }
-
+    
         try {
-            // Prepare data for BigQuery
-            const uploadedData = secondQueryResults.map((row) => ({
-                input_question: row['examples.input_question'] || null,
-                output_json: row['examples.output_json'] || null,
+            const uploadedData = examplesData.map((row) => ({
+                input_question: row['examples.input_question'] 
+                    ? row['examples.input_question'].replace(/\n/g, ' ').trim() 
+                    : null,
+                output_json: row['examples.output_json'] 
+                    ? row['examples.output_json'].replace(/\n/g, ' ').trim() 
+                    : null,
             }));
-
-            // Log the prepared data for debugging
+    
             console.log('Uploading data:', uploadedData);
-
-            // Construct the SQL query as a string
-            const rows = uploadedData.map(data => `
-                STRUCT(
-                    ${data.input_question !== null ? `'${data.input_question.replace(/'/g, "\\'")}'` : 'NULL'} AS input_question,
-                    ${data.output_json !== null ? `'${data.output_json.replace(/'/g, "\\'")}'` : 'NULL'} AS output_json
+    
+            const rows = uploadedData.map(data => 
+                `STRUCT(${data.input_question !== null ? `'${data.input_question.replace(/'/g, "\\'")}' AS input_question` : 'NULL'}, ` +
+                `${data.output_json !== null ? `'${data.output_json.replace(/'/g, "\\'")}' AS output_json` : 'NULL'})`
+            );
+    
+            const deleteQuery = `
+                DELETE FROM \`chatter.examples_test\`
+                WHERE model = '${selectedModel.replace(/'/g, "\\'")}'
+                  AND explore = '${selectedExplore.replace(/'/g, "\\'")}'
+            `;
+    
+            const insertQuery = `
+                INSERT INTO \`chatter.examples_test\` (
+                    input_question,
+                    output_json,
+                    explore,
+                    model
                 )
-            `);
-
-            const sqlQuery = `
-                CREATE OR REPLACE TABLE \`chatter.examples_test\` AS
                 SELECT 
                     input_question, 
                     output_json, 
-                    '${selectedExplore}' AS explore,
-                    '${selectedModel}' AS model,
-                FROM UNNEST([${rows.join(',\n')}]);
+                    '${selectedExplore.replace(/'/g, "\\'")}' AS explore,
+                    '${selectedModel.replace(/'/g, "\\'")}' AS model
+                FROM UNNEST([${rows.join(',')}]);
             `;
-
-            // Print the SQL query
-            console.log('Generated SQL Query:', sqlQuery);
-
-            // Create the SQL query using Looker SDK
+    
+            const sqlQuery = `${deleteQuery};\n${insertQuery}`;
+            console.log('Generated Query:', sqlQuery);
+    
             const sqlQueryResponse = await core40SDK.ok(
                 core40SDK.create_sql_query({
-                    // connection_name: 'sam-pitcher-playground', // Replace with your Looker connection name
                     model_name: selectedModel,
                     sql: sqlQuery,
                 })
             );
-
-            // Extract the slug from the response
+    
+            console.log('SQL Query Creation Response:', sqlQueryResponse);
+    
             const { slug } = sqlQueryResponse;
-
-            // Run the SQL query using Looker SDK
             const runResponse = await core40SDK.ok(
                 core40SDK.run_sql_query(slug, 'json')
             );
-
+    
             console.log('Run Response:', runResponse);
-
-            alert('Table created or replaced successfully!');
+            alert('Fields updated successfully!');
         } catch (error) {
             console.error('Upload failed:', error);
             alert('Upload failed. Please try again.');
         }
     };
-
-
-
+    
 
     return (
         <div style={styles.container}>
@@ -361,7 +434,7 @@ ${item.url}
                     ))}
                 </select>
                 <button
-                    onClick={handleRunQuery}
+                    onClick={handleFetchExamples}
                     style={{
                         ...styles.button,
                         opacity: (!selectedModel || !selectedExplore) ? 0.6 : 1,
@@ -369,7 +442,18 @@ ${item.url}
                     }}
                     disabled={!selectedModel || !selectedExplore}
                 >
-                    Run Query
+                    Fetch Examples
+                </button>
+                <button
+                    onClick={handleGenerateExamples}
+                    style={{
+                        ...styles.button,
+                        opacity: (!selectedModel || !selectedExplore) ? 0.6 : 1,
+                        cursor: (!selectedModel || !selectedExplore) ? 'not-allowed' : 'pointer'
+                    }}
+                    disabled={!selectedModel || !selectedExplore}
+                >
+                    Generate Examples
                 </button>
             </div>
 
@@ -392,20 +476,28 @@ ${item.url}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {secondQueryResults.map((row, index) => (
+                                        {examplesData.map((row, index) => (
                                             <tr key={index}>
                                                 <td style={styles.td}>
-                                                    {row['examples.input_question']}
+                                                    <textarea
+                                                        value={row['examples.input_question']}
+                                                        onChange={(e) => handleCellEdit(index, 'input_question', e.target.value)}
+                                                        style={styles.cellTextarea}
+                                                    />
                                                 </td>
                                                 <td style={styles.td}>
-                                                    {row['examples.output_json'] || JSON.stringify(defaultJson)}
+                                                    <textarea
+                                                        value={row['examples.output_json']}
+                                                        onChange={(e) => handleCellEdit(index, 'output_json', e.target.value)}
+                                                        style={styles.cellTextarea}
+                                                    />
                                                 </td>
                                                 <td style={styles.actionCell}>
                                                     <button
                                                         onClick={() => handleEditJson(index)}
                                                         style={styles.actionButton}
                                                     >
-                                                        Edit
+                                                        Edit JSON
                                                     </button>
                                                     <button
                                                         onClick={() => handleDeleteRow(index)}
@@ -429,332 +521,417 @@ ${item.url}
                                 Upload
                             </button>
                         </div>
-
-                        <div style={styles.resultBox}>
-                            <h3 style={styles.heading}>Example questions and JSON from most queried Explores</h3>
-                            <pre style={styles.pre}>{queryResults}</pre>
-                        </div>
                     </>
                 )}
             </div>
 
+            {/* Edit Modal */}
             <Modal isOpen={modalIsOpen} onRequestClose={() => setModalIsOpen(false)} style={styles.modal}>
-                            <div style={styles.modalHeader}>
-                                <h2 style={styles.modalTitle}>Edit Example</h2>
-                            </div>
-                            <div style={styles.modalBody}>
-                                <div style={styles.modalSection}>
-                                    <h3 style={styles.modalSectionTitle}>Input Question</h3>
+                <div style={styles.modalHeader}>
+                    <h2 style={styles.modalTitle}>Edit Example</h2>
+                </div>
+                <div style={styles.modalBody}>
+                    <div style={styles.modalSection}>
+                        <h3 style={styles.modalSectionTitle}>Input Question</h3>
+                        <textarea
+                            value={editQuestion}
+                            onChange={(e) => setEditQuestion(e.target.value)}
+                            style={styles.modalTextarea}
+                        />
+                    </div>
+                    <div style={styles.modalSection}>
+                        <h3 style={styles.modalSectionTitle}>JSON Configuration</h3>
+                        {Object.entries(jsonEditData).map(([key, value]) => (
+                            <div key={key} style={styles.modalRow}>
+                                <label style={styles.modalLabel}>{key}</label>
+                                {key === 'query.filters' ? (
                                     <textarea
-                                        value={editQuestion}
-                                        onChange={(e) => setEditQuestion(e.target.value)}
-                                        style={styles.modalTextarea}
-                                    />
+                                        value={typeof value === 'object' ? JSON.stringify(value, null, 2) : value}
+                                        onChange={(e) => handleJsonFieldChange(key, e.target.value)}
+                                        style={styles.modalJsonInput}
+                                        />
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={typeof value === 'object' ? JSON.stringify(value) : value}
+                                            onChange={(e) => handleJsonFieldChange(key, e.target.value)}
+                                            style={styles.modalInput}
+                                        />
+                                    )}
                                 </div>
-                                <div style={styles.modalSection}>
-                                    <h3 style={styles.modalSectionTitle}>JSON Configuration</h3>
-                                    {Object.entries(jsonEditData).map(([key, value]) => (
-                                        <div key={key} style={styles.modalRow}>
-                                            <label style={styles.modalLabel}>{key}</label>
-                                            {key === 'query.filters' ? (
-                                                <textarea
-                                                    value={typeof value === 'object' ? JSON.stringify(value, null, 2) : value}
-                                                    onChange={(e) => handleJsonFieldChange(key, e.target.value)}
-                                                    style={styles.modalJsonInput}
-                                                />
-                                            ) : (
-                                                <input
-                                                    type="text"
-                                                    value={typeof value === 'object' ? JSON.stringify(value) : value}
-                                                    onChange={(e) => handleJsonFieldChange(key, e.target.value)}
-                                                    style={styles.modalInput}
-                                                />
-                                            )}
-                                        </div>
-                                    ))}
+                            ))}
+                        </div>
+                    </div>
+                    <div style={styles.modalFooter}>
+                        <button onClick={() => setModalIsOpen(false)} style={styles.secondaryButton}>Cancel</button>
+                        <button onClick={handleModalSave} style={styles.primaryButton}>Save</button>
+                    </div>
+                </Modal>
+    
+                {/* Generated Examples Modal */}
+                <Modal isOpen={generatedExamplesModal} onRequestClose={() => setGeneratedExamplesModal(false)} style={styles.modal}>
+                    <div style={styles.modalHeader}>
+                        <h2 style={styles.modalTitle}>Generated Examples</h2>
+                    </div>
+                    <div style={styles.modalBody}>
+                        <div style={styles.modalSection}>
+                            {generatedExamples.map((example, index) => (
+                                <div key={index} style={styles.generatedExample}>
+                                    <h4 style={styles.generatedExampleTitle}>Example {index + 1}</h4>
+                                    <div style={styles.generatedExampleContent}>
+                                        <p style={styles.generatedExampleQuestion}><strong>Question:</strong> {example.question}</p>
+                                        <pre style={styles.generatedExampleJson}>
+                                            <strong>JSON:</strong> {JSON.stringify(example.json, null, 2).replace(/\\"/g, '"').replace(/\\n|\\t|\\r/g, '')}
+                                        </pre>
+                                        <button 
+                                            onClick={() => {
+                                                handleAddGeneratedExample(example);
+                                                setGeneratedExamplesModal(false);
+                                            }}
+                                            style={styles.addExampleButton}
+                                        >
+                                            Add to Examples
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
-                            <div style={styles.modalFooter}>
-                                <button onClick={() => setModalIsOpen(false)} style={styles.secondaryButton}>Cancel</button>
-                                <button onClick={handleModalSave} style={styles.primaryButton}>Save</button>
-                            </div>
-                        </Modal>
-        </div>
-    );
-};
-
-const styles = {
-    container: {
-        display: 'flex',
-        flexDirection: 'column',
-        height: '90vh',
-        width: '90%',
-        margin: '20px auto',
-        border: '1px solid #e0e0e0',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        backgroundColor: '#ffffff',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    },
-    selectionContainer: {
-        padding: '20px',
-        borderBottom: '1px solid #e0e0e0',
-        display: 'flex',
-        gap: '15px',
-        alignItems: 'center',
-        backgroundColor: '#f8f9fa',
-    },
-    dropdown: {
-        padding: '10px',
-        border: '1px solid #ced4da',
-        borderRadius: '6px',
-        backgroundColor: '#fff',
-        fontSize: '14px',
-        flex: 1,
-        maxWidth: '300px',
-        color: '#495057',
-    },
-    button: {
-        padding: '10px 20px',
-        fontSize: '14px',
-        fontWeight: '500',
-        borderRadius: '6px',
-        backgroundColor: '#0d6efd',
-        color: '#fff',
-        border: 'none',
-        transition: 'background-color 0.2s',
-        minWidth: '120px',
-    },
-    resultsContainer: {
-        padding: '20px',
-        overflowY: 'auto',
-        flex: 1,
-        backgroundColor: '#fff',
-    },
-    resultBox: {
-        marginBottom: '25px',
-        padding: '20px',
-        border: '1px solid #e0e0e0',
-        borderRadius: '8px',
-        backgroundColor: '#fff',
-        boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
-    },
-    heading: {
-        margin: '0 0 15px 0',
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#212529',
-    },
-    pre: {
-        whiteSpace: 'pre-wrap',
-        wordWrap: 'break-word',
-        backgroundColor: '#f8f9fa',
-        padding: '15px',
-        borderRadius: '6px',
-        fontSize: '14px',
-        color: '#495057',
-    },
-    loaderContainer: {
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        height: '200px',
-    },
-    spinner: {
-        width: '40px',
-        height: '40px',
-        border: '4px solid #f3f3f3',
-        borderTop: '4px solid #0d6efd',
-        borderRadius: '50%',
-        animation: 'spin 1s linear infinite',
-    },
-    tableWrapper: {
-        overflowX: 'auto',
-    },
-    table: {
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: '14px',
-    },
-    th: {
-        textAlign: 'left',
-        padding: '12px',
-        backgroundColor: '#f8f9fa',
-        borderBottom: '2px solid #dee2e6',
-        color: '#495057',
-        fontWeight: '600',
-    },
-    td: {
-        padding: '12px',
-        borderBottom: '1px solid #dee2e6',
-        color: '#212529',
-        minWidth: '200px',
-        maxWidth: '400px',
-        overflowWrap: 'break-word',
-    },
-    buttonContainer: {
-        display: 'flex',
-        justifyContent: 'flex-end',
-        gap: '12px',
-        marginTop: '20px',
-        marginBottom: '20px',  // Add margin-bottom to create space before the next section
-    },
-    primaryButton: {
-        padding: '10px 20px',
-        fontSize: '14px',
-        fontWeight: '500',
-        backgroundColor: '#0d6efd',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        transition: 'background-color 0.2s',
-    },
-    secondaryButton: {
-        padding: '10px 20px',
-        fontSize: '14px',
-        fontWeight: '500',
-        backgroundColor: '#fff',
-        color: '#0d6efd',
-        border: '1px solid #0d6efd',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-    },
-    modal: {
-        content: {
-            top: '50%',
-            left: '50%',
-            right: 'auto',
-            bottom: 'auto',
-            marginRight: '-50%',
-            transform: 'translate(-50%, -50%)',
-            padding: '12px', // Match table cell padding
-            borderRadius: '8px',  // Match table border-radius
-            border: '1px solid #dee2e6', // Match table border
-            backgroundColor: '#fff',  // Match table background
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)', // Add a subtle shadow
-            fontFamily: 'system-ui, -apple-system, sans-serif', // Consistent font
-            maxWidth: '80%', // Set a max width for the modal
-            minWidth: '80%',
-            width: 'auto', // Allow the modal to adjust width based on content
+                            ))}
+                        </div>
+                    </div>
+                    <div style={styles.modalFooter}>
+                        <button onClick={() => setGeneratedExamplesModal(false)} style={styles.secondaryButton}>Close</button>
+                    </div>
+                </Modal>
+            </div>
+        );
+    };
+    
+    const styles = {
+        generatedExample: {
+            marginBottom: '20px',
+            padding: '15px',
+            borderRadius: '6px',
+            border: '1px solid #dee2e6',
+            backgroundColor: '#f8f9fa',
         },
-        overlay: { // Style the overlay for a better visual
-            backgroundColor: 'rgba(0, 0, 0, 0.5)', 
-        }
-    },
-    modalHeader: {
-        backgroundColor: '#f8f9fa', // Match table header background
-        padding: '12px',
-        borderBottom: '2px solid #dee2e6',
-        marginBottom: '10px',
-    },
-    modalTitle: {
-        fontSize: '16px',
-        fontWeight: '600',
-        color: '#495057', // Match table header text color
-        margin: 0, // Remove any default margin
-    },
-    modalBody: { // Add a modalBody for better content organization
-        padding: '10px', 
-    },
-    modalRow: {
-        display: 'flex', // Use flexbox for better alignment
-        alignItems: 'center', // Align items vertically
-        marginBottom: '10px',
-        justifyContent: 'space-between', // Distribute space between label and input
-    },
-    modalLabel: {
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        fontSize: '14px',
-        color: '#495057', // Match table text color
-        fontWeight: '600', // Match table header font weight
-        marginRight: '10px', // Add space between label and input
-    },
-    modalInput: {
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        fontSize: '14px',
-        padding: '8px',
-        borderRadius: '5px',
-        border: '1px solid #ccc',
-        flex: 1, // Allow input to take available space
-    },
-    modalFooter: { // Add a modalFooter for buttons
-        marginTop: '20px',
-        display: 'flex',
-        justifyContent: 'flex-end', // Align buttons to the right
-    },
-    actionCell: {
-        padding: '12px',
-        borderBottom: '1px solid #dee2e6',
-        whiteSpace: 'nowrap',
-        width: '200px',
-    },
-    actionButton: {
-        padding: '6px 12px',
-        fontSize: '13px',
-        fontWeight: '500',
-        backgroundColor: '#0d6efd',
-        color: '#fff',
-        border: 'none',
-        borderRadius: '4px',
-        cursor: 'pointer',
-        marginRight: '8px',
-        transition: 'background-color 0.2s',
-    },
-    modalSection: {
-        marginBottom: '20px',
-    },
-    modalSectionTitle: {
-        fontSize: '16px',
-        fontWeight: '600',
-        color: '#495057',
-        marginBottom: '10px',
-    },
-    modalTextarea: {
-        width: '100%',
-        minHeight: '100px',
-        padding: '8px',
-        borderRadius: '5px',
-        border: '1px solid #ccc',
-        fontSize: '14px',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        resize: 'vertical',
-    },
-    modalJsonInput: {
-        width: '100%',
-        minHeight: '80px',
-        padding: '8px',
-        borderRadius: '5px',
-        border: '1px solid #ccc',
-        fontSize: '14px',
-        fontFamily: 'monospace',
-        resize: 'vertical',
-    },
-    modalHeader: {
-        backgroundColor: '#f8f9fa',
-        padding: '15px 20px',
-        borderBottom: '1px solid #dee2e6',
-        borderTopLeftRadius: '8px',
-        borderTopRightRadius: '8px',
-    },
-    modalTitle: {
-        fontSize: '18px',
-        fontWeight: '600',
-        color: '#212529',
-        margin: 0,
-    },
-    modalBody: {
-        padding: '20px',
-    },
-    modalFooter: {
-        padding: '15px 20px',
-        borderTop: '1px solid #dee2e6',
-        display: 'flex',
-        justifyContent: 'flex-end',
-        gap: '10px',
-    },
-};
-
-export default Examples;
+        generatedExampleTitle: {
+            margin: '0 0 10px 0',
+            fontSize: '16px',
+            fontWeight: '600',
+            color: '#212529',
+        },
+        generatedExampleContent: {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+        },
+        generatedExampleQuestion: {
+            margin: '0',
+            fontSize: '14px',
+            color: '#495057',
+        },
+        generatedExampleJson: {
+            margin: '0',
+            padding: '10px',
+            backgroundColor: '#fff',
+            borderRadius: '4px',
+            fontSize: '13px',
+            fontFamily: 'monospace',
+            overflowX: 'auto',
+        },
+        addExampleButton: {
+            alignSelf: 'flex-end',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: '500',
+            backgroundColor: '#28a745',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            transition: 'background-color 0.2s',
+        },
+        container: {
+            display: 'flex',
+            flexDirection: 'column',
+            height: '90vh',
+            width: '90%',
+            margin: '20px auto',
+            border: '1px solid #e0e0e0',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+        },
+        selectionContainer: {
+            padding: '20px',
+            borderBottom: '1px solid #e0e0e0',
+            display: 'flex',
+            gap: '15px',
+            alignItems: 'center',
+            backgroundColor: '#f8f9fa',
+        },
+        dropdown: {
+            padding: '10px',
+            border: '1px solid #ced4da',
+            borderRadius: '6px',
+            backgroundColor: '#fff',
+            fontSize: '14px',
+            flex: 1,
+            maxWidth: '300px',
+            color: '#495057',
+        },
+        button: {
+            padding: '10px 20px',
+            fontSize: '14px',
+            fontWeight: '500',
+            borderRadius: '6px',
+            backgroundColor: '#0d6efd',
+            color: '#fff',
+            border: 'none',
+            transition: 'background-color 0.2s',
+            minWidth: '120px',
+        },
+        resultsContainer: {
+            padding: '20px',
+            overflowY: 'auto',
+            flex: 1,
+            backgroundColor: '#fff',
+        },
+        resultBox: {
+            marginBottom: '25px',
+            padding: '20px',
+            border: '1px solid #e0e0e0',
+            borderRadius: '8px',
+            backgroundColor: '#fff',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+        },
+        heading: {
+            margin: '0 0 15px 0',
+            fontSize: '18px',
+            fontWeight: '600',
+            color: '#212529',
+        },
+        pre: {
+            whiteSpace: 'pre-wrap',
+            wordWrap: 'break-word',
+            backgroundColor: '#f8f9fa',
+            padding: '15px',
+            borderRadius: '6px',
+            fontSize: '14px',
+            color: '#495057',
+        },
+        loaderContainer: {
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: '200px',
+        },
+        spinner: {
+            width: '40px',
+            height: '40px',
+            border: '4px solid #f3f3f3',
+            borderTop: '4px solid #0d6efd',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+        },
+        tableWrapper: {
+            overflowX: 'auto',
+        },
+        table: {
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: '14px',
+        },
+        th: {
+            textAlign: 'left',
+            padding: '12px',
+            backgroundColor: '#f8f9fa',
+            borderBottom: '2px solid #dee2e6',
+            color: '#495057',
+            fontWeight: '600',
+        },
+        cellTextarea: {
+            width: '100%',
+            minHeight: '120px',
+            padding: '8px',
+            border: '1px solid #ced4da',
+            borderRadius: '4px',
+            fontSize: '14px',
+            resize: 'vertical',
+            backgroundColor: '#fff',
+        },
+        td: {
+            padding: '12px',
+            borderBottom: '1px solid #dee2e6',
+            color: '#212529',
+            minWidth: '200px',
+            maxWidth: '400px',
+            verticalAlign: 'top',
+        },
+        buttonContainer: {
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px',
+            marginTop: '20px',
+            marginBottom: '20px',
+        },
+        primaryButton: {
+            padding: '10px 20px',
+            fontSize: '14px',
+            fontWeight: '500',
+            backgroundColor: '#0d6efd',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'background-color 0.2s',
+        },
+        secondaryButton: {
+            padding: '10px 20px',
+            fontSize: '14px',
+            fontWeight: '500',
+            backgroundColor: '#fff',
+            color: '#0d6efd',
+            border: '1px solid #0d6efd',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+        },
+        modal: {
+            content: {
+                top: '50%',
+                left: '50%',
+                right: 'auto',
+                bottom: 'auto',
+                marginRight: '-50%',
+                transform: 'translate(-50%, -50%)',
+                padding: '0', // Remove padding to avoid double scrollbars
+                borderRadius: '8px',
+                border: '1px solid #dee2e6',
+                backgroundColor: '#fff',
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.05)',
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                maxWidth: '80%',
+                width: '80%',
+                maxHeight: '90vh', // Limit height
+                overflow: 'hidden', // Hide overflow on container
+            },
+            overlay: {
+                backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            }
+        },
+        modalHeader: {
+            backgroundColor: '#f8f9fa',
+            padding: '15px 20px',
+            borderBottom: '1px solid #dee2e6',
+            borderTopLeftRadius: '8px',
+            borderTopRightRadius: '8px',
+        },
+        modalTitle: {
+            fontSize: '18px',
+            fontWeight: '600',
+            color: '#212529',
+            margin: 0,
+        },
+        modalBody: {
+            padding: '20px',
+            maxHeight: 'calc(90vh - 140px)', // Account for header/footer
+            overflowY: 'auto', // Enable scrolling
+        },
+        modalSection: {
+            marginBottom: '20px',
+        },
+        modalSectionTitle: {
+            fontSize: '16px',
+            fontWeight: '600',
+            color: '#495057',
+            marginBottom: '10px',
+        },
+        modalRow: {
+            display: 'flex',
+            alignItems: 'center',
+            marginBottom: '10px',
+            justifyContent: 'space-between',
+        },
+        modalLabel: {
+            fontSize: '14px',
+            color: '#495057',
+            fontWeight: '600',
+            marginRight: '10px',
+        },
+        modalInput: {
+            padding: '8px',
+            borderRadius: '5px',
+            border: '1px solid #ccc',
+            fontSize: '14px',
+            flex: 1,
+        },
+        modalTextarea: {
+            width: '100%',
+            minHeight: '100px',
+            padding: '8px',
+            borderRadius: '5px',
+            border: '1px solid #ccc',
+            fontSize: '14px',
+            resize: 'vertical',
+        },
+        modalJsonInput: {
+            width: '100%',
+            minHeight: '80px',
+            padding: '8px',
+            borderRadius: '5px',
+            border: '1px solid #ccc',
+            fontSize: '14px',
+            fontFamily: 'monospace',
+            resize: 'vertical',
+        },
+        modalFooter: {
+            padding: '15px 20px',
+            borderTop: '1px solid #dee2e6',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '10px',
+        },
+        actionCell: {
+            padding: '12px',
+            borderBottom: '1px solid #dee2e6',
+            whiteSpace: 'nowrap',
+            width: '200px',
+        },
+        actionButton: {
+            padding: '6px 12px',
+            fontSize: '13px',
+            fontWeight: '500',
+            backgroundColor: '#0d6efd',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            marginRight: '8px',
+            transition: 'background-color 0.2s',
+        },
+        selectionContainer: {
+            padding: '20px',
+            borderBottom: '1px solid #e0e0e0',
+            display: 'flex',
+            gap: '15px',
+            alignItems: 'center',
+            backgroundColor: '#f8f9fa',
+            flexWrap: 'wrap', // Add this to handle smaller screens
+        },
+        button: {
+            padding: '10px 20px',
+            fontSize: '14px',
+            fontWeight: '500',
+            borderRadius: '6px',
+            backgroundColor: '#0d6efd',
+            color: '#fff',
+            border: 'none',
+            transition: 'background-color 0.2s',
+            minWidth: '120px',
+            flex: '0 0 auto', // Add this to prevent button from stretching
+        },
+    };
+    
+    export default Examples;
