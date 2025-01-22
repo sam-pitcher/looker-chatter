@@ -16,21 +16,51 @@ ChartJS.register(
 );
 
 const ChatBot = () => {
+    const [selectedModel, setSelectedModel] = useState('');
+    const [selectedExplore, setSelectedExplore] = useState('');
+    const [models, setModels] = useState([]);
+    const [explores, setExplores] = useState([]);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
 
+    useEffect(() => {
+        const fetchModels = async () => {
+            try {
+                const allModels = await core40SDK.ok(core40SDK.all_lookml_models({ fields: "" }));
+                setModels(allModels);
+            } catch (error) {
+                console.error('Error fetching LookML models:', error);
+            }
+        };
+        fetchModels();
+    }, []);
+
+    useEffect(() => {
+        const fetchExplores = async () => {
+            if (selectedModel) {
+                try {
+                    const model = await core40SDK.ok(core40SDK.lookml_model(selectedModel));
+                    setExplores(model.explores);
+                } catch (error) {
+                    console.error('Error fetching explores for model:', error);
+                }
+            }
+        };
+        fetchExplores();
+    }, [selectedModel]);
+
     const convertMessagesToBulletList = (messages) => {
         const bulletMessages = messages
-        .map((item) => {
-            // if (item.sender === "user") {
-            //     return `- User: ${item.text}`;
-            // }
-            return `- ${item.sender}: ${item.text}`
-        })
-        .join("\n");
+            .map((item) => {
+                // if (item.sender === "user") {
+                //     return `- User: ${item.text}`;
+                // }
+                return `- ${item.sender}: ${item.text}`
+            })
+            .join("\n");
         console.log("Messages: ", bulletMessages)
         return bulletMessages;
     };
@@ -74,7 +104,7 @@ const ChatBot = () => {
         const pivotDimension = null; // Initialize with no pivot
 
         const processedData = processDataWithPivot(response.rows, primaryDimension, pivotDimension, measures);
-        
+
         return {
             type: 'chart',
             data: processedData,
@@ -119,8 +149,8 @@ const ChatBot = () => {
         measures.forEach((measure, measureIndex) => {
             uniquePivotValues.forEach((pivotValue, pivotIndex) => {
                 const data = primaryValues.map(primaryValue => {
-                    const matchingRows = rows.filter(row => 
-                        row[primaryDim].value === primaryValue && 
+                    const matchingRows = rows.filter(row =>
+                        row[primaryDim].value === primaryValue &&
                         row[pivotDim].value === pivotValue
                     );
                     if (matchingRows.length === 0) return 0;
@@ -225,8 +255,8 @@ const ChatBot = () => {
         );
 
         setMessages(prevMessages => prevMessages.map(msg =>
-            msg === message ? { 
-                ...msg, 
+            msg === message ? {
+                ...msg,
                 viewType,
                 chartData: processedData
             } : msg
@@ -237,7 +267,7 @@ const ChatBot = () => {
         setIsSummarizing(true);
         try {
             const jsonString = JSON.stringify(json_input, null, 2);
-            
+
             const summaryResponse = await core40SDK.ok(core40SDK.run_inline_query({
                 body: {
                     model: 'chatter',
@@ -250,20 +280,20 @@ const ChatBot = () => {
                 },
                 result_format: 'json',
             }));
-    
+
             if (summaryResponse && summaryResponse[0]) {
                 let generatedContent = summaryResponse[0]["summary_prompt.generated_content"]?.trim();
-                
+
                 if (generatedContent) {
                     generatedContent = generatedContent
                         .replace(/[,]/g, '')
                         .replace(/[^\w\s.()?()-]/g, '')
                         .trim();
-                    
-                    const summaryMessage = { 
-                        sender: 'bot', 
+
+                    const summaryMessage = {
+                        sender: 'bot',
                         type: 'text',
-                        text: generatedContent 
+                        text: generatedContent
                     };
                     setMessages(prevMessages => [...prevMessages, summaryMessage]);
                 }
@@ -272,10 +302,10 @@ const ChatBot = () => {
             console.error('Error in summariseJSONResponse:', error);
             setMessages(prevMessages => [
                 ...prevMessages,
-                { 
-                    sender: 'bot', 
+                {
+                    sender: 'bot',
                     type: 'text',
-                    text: 'Error generating summary. Please try again.' 
+                    text: 'Error generating summary. Please try again.'
                 }
             ]);
         } finally {
@@ -285,23 +315,23 @@ const ChatBot = () => {
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
-    
+
         const inputClean = input
             .replace(/[,]/g, '') // Remove commas
             .replace(/[^\w\s.()?()-]/g, '') // Remove special characters except for ?, periods, parentheses, and hyphens
             .trim();
         const userMessage = { sender: 'user', text: inputClean };
-        
+
         // Add the new message to the messages array immediately
         setMessages(prevMessages => {
             const newMessages = [...prevMessages, userMessage]; // Add the new user message
             processChatResponse(newMessages); // Process chat response with updated messages
             return newMessages;
         });
-    
+
         setInput('');
     };
-    
+
     const processChatResponse = async (updatedMessages) => {
         try {
             // Update the chat history directly here to include the latest message
@@ -313,15 +343,17 @@ const ChatBot = () => {
                     filters: {
                         'chat_prompt.previous_messages': convertMessagesToBulletList(updatedMessages).replace(/,/g, ''),
                         'chat_prompt.prompt_input': input.replace(/,/g, ''),
+                        'chat_prompt.model': `'${selectedModel}'`,
+                        'chat_prompt.explore': `'${selectedExplore}'`
                     },
                 },
                 result_format: 'json',
             }));
-    
+
             const generatedContent = chatResponse[0]["chat_prompt.generated_content"].trim();
-    
+
             const botMessage = { sender: 'bot', text: generatedContent };
-    
+
             await runQueryFromJson(generatedContent);
         } catch (error) {
             console.error('Error:', error);
@@ -333,6 +365,7 @@ const ChatBot = () => {
     };
 
     const runQueryFromJson = async (jsonStringInput) => {
+        console.log("Looker JSON: ", jsonStringInput)
         try {
             const jsonInput = JSON.parse(jsonStringInput);
 
@@ -410,7 +443,7 @@ const ChatBot = () => {
                     text: measure.label
                 },
                 ticks: {
-                    callback: function(value) {
+                    callback: function (value) {
                         return value.toLocaleString();
                     }
                 }
@@ -494,7 +527,7 @@ const ChatBot = () => {
         data.forEach(row => {
             const primaryKey = row[primaryDimension.name].value;
             const pivotKey = row[pivotDimension].value;
-            
+
             measures.forEach(measure => {
                 const value = row[measure.name].value;
                 cellLookup[`${primaryKey}-${pivotKey}-${measure.name}`] = value;
@@ -532,8 +565,8 @@ const ChatBot = () => {
                                     measures.map(measure => {
                                         const value = cellLookup[`${primaryValue}-${pivotValue}-${measure.name}`] || 0;
                                         return (
-                                            <td 
-                                                key={`${pivotValue}-${measure.name}`} 
+                                            <td
+                                                key={`${pivotValue}-${measure.name}`}
                                                 style={{
                                                     ...styles.tableCell,
                                                     backgroundColor: getCellBackground(value)
@@ -627,7 +660,7 @@ const ChatBot = () => {
                             onSortChange={handleSortChange}
                             onViewTypeChange={handleViewTypeChange}
                         />
-                        <DataTable 
+                        <DataTable
                             data={message.rawData}
                             dimensions={message.dimensions}
                             measures={message.measures}
@@ -646,9 +679,9 @@ const ChatBot = () => {
                             onViewTypeChange={handleViewTypeChange}
                         />
                         <div style={styles.messageChart}>
-                            <ChartComponent 
-                                data={message.chartData} 
-                                options={getChartOptions(message.measures)} 
+                            <ChartComponent
+                                data={message.chartData}
+                                options={getChartOptions(message.measures)}
                             />
                         </div>
                     </div>
@@ -670,6 +703,33 @@ const ChatBot = () => {
 
     return (
         <div style={styles.chatBotContainer}>
+            <div style={styles.selectionContainer}>
+                <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    style={styles.dropdown}
+                >
+                    <option value="">Select Model</option>
+                    {models.map((model) => (
+                        <option key={model.name} value={model.name}>
+                            {model.name}
+                        </option>
+                    ))}
+                </select>
+                <select
+                    value={selectedExplore}
+                    onChange={(e) => setSelectedExplore(e.target.value)}
+                    style={styles.dropdown}
+                    disabled={!selectedModel}
+                >
+                    <option value="">Select Explore</option>
+                    {explores.map((explore) => (
+                        <option key={explore.name} value={explore.name}>
+                            {explore.name}
+                        </option>
+                    ))}
+                </select>
+            </div>
             <div style={styles.chatMessages}>
                 {messages.map((msg, index) => (
                     <div
@@ -699,8 +759,8 @@ const ChatBot = () => {
                     style={styles.input}
                     placeholder="Type your message..."
                 />
-                <button 
-                    onClick={handleSendMessage} 
+                <button
+                    onClick={handleSendMessage}
                     style={styles.button}
                     disabled={isLoading}
                 >
@@ -729,6 +789,24 @@ const styles = {
         left: '5%',
         backgroundColor: '#fff',
         boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+    },
+    selectionContainer: {
+        padding: '20px',
+        borderBottom: '1px solid #e0e0e0',
+        display: 'flex',
+        gap: '15px',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
+    dropdown: {
+        padding: '10px',
+        border: '1px solid #ced4da',
+        borderRadius: '6px',
+        backgroundColor: '#fff',
+        fontSize: '14px',
+        flex: 1,
+        maxWidth: '300px',
+        color: '#495057',
     },
     chatMessages: {
         height: '70vh',

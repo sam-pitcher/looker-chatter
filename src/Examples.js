@@ -186,21 +186,29 @@ const Examples = () => {
 
     const formatJson = (jsonObj) => {
         const formatted = {};
+    
         for (const [key, value] of Object.entries(jsonObj)) {
             if (Array.isArray(value)) {
+                // Value is already an array
                 formatted[key] = value;
             } else if (typeof value === 'object' && value !== null) {
+                // Value is a nested object
                 formatted[key] = formatJson(value);
-            } else if (typeof value === 'string' && value.includes('[') && value.includes(']')) {
+            } else if (typeof value === 'string') {
                 try {
-                    formatted[key] = JSON.parse(value);
-                } catch (e) {
+                    // Attempt to parse the string as JSON
+                    const parsed = JSON.parse(value);
+                    formatted[key] = typeof parsed === 'object' ? formatJson(parsed) : parsed;
+                } catch {
+                    // Keep the value as-is if parsing fails
                     formatted[key] = value;
                 }
             } else {
+                // Preserve other types as-is
                 formatted[key] = value;
             }
         }
+    
         return formatted;
     };
 
