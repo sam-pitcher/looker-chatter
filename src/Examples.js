@@ -158,12 +158,64 @@ const Examples = () => {
                     console.error('Error processing item:', error);
                 }
             }
+            console.log(results)
             return results;
         } catch (error) {
             console.error('Error processing items:', error);
             return [];
         }
     };
+
+    // const processItems = async (items) => {
+    //     const results = [];
+    //     const formatJson = (inputJson) => {
+    //         const jsonString = JSON.stringify(inputJson)
+    //             .replace(/\\u0027/g, "'")
+    //             .replace(/\\/g, "")
+    //             .replace(/"/g, "'")
+    //         return jsonString
+    //     }
+    //     for (const item of items) {
+    //         const processedItem = { ...item };
+    //         delete processedItem['query.id'];
+    //         delete processedItem['history.count'];
+    //         const formattedItem = formatJson(processedItem)
+    //         results.push(formattedItem);
+    //         console.log(results)
+
+    //     }
+    //     const jsonString = results.join("CHATTERRETTAHC")
+    //     console.log(jsonString)
+    //     const response = await Promise.race([
+    //         core40SDK.ok(
+    //             core40SDK.run_inline_query({
+    //                 body: {
+    //                     model: 'chatter',
+    //                     view: 'multi_json_prompt',
+    //                     fields: ['multi_json_prompt.question', 'multi_json_prompt.output_json'],
+    //                     filters: {
+    //                         'multi_json_prompt.prompt_input': `"${jsonString}"`,
+    //                     },
+    //                 },
+    //                 result_format: 'json',
+    //             })
+    //         ),
+    //         new Promise((_, reject) =>
+    //             setTimeout(() => reject(new Error('Request timed out')), 15000)
+    //         ),
+    //     ]);
+
+    //     console.log(response)
+
+    //     const result = response.map(item => ({
+    //         question: item["multi_json_prompt.question"],
+    //         json: formatJson(JSON.parse(item["multi_json_prompt.output_json"]))
+    //     }));
+
+    //     console.log(result)
+
+    //     return result
+    // };
 
     const handleFetchExamples = async () => {
         if (selectedModel) {
@@ -218,7 +270,7 @@ const Examples = () => {
                             'query.view': selectedExplore
                         },
                         sorts: ["history.count desc"],
-                        limit: 4
+                        limit: 3
                     },
                     result_format: 'json',
                 })
@@ -648,15 +700,15 @@ const Examples = () => {
                     </div>
                 </div>
                 <div style={styles.modalFooter}>
-                <button 
-                        onClick={handleAddSelectedGeneratedExamples} 
+                    <button
+                        onClick={handleAddSelectedGeneratedExamples}
                         style={styles.primaryButton}
                         disabled={selectedGeneratedExamples.length === 0}
                     >
                         Add Selected Examples
                     </button>
-                    <button 
-                        onClick={() => setGeneratedExamplesModal(false)} 
+                    <button
+                        onClick={() => setGeneratedExamplesModal(false)}
                         style={styles.secondaryButton}
                     >
                         Close
