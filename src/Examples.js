@@ -367,13 +367,13 @@ const Examples = () => {
             );
     
             const deleteQuery = `
-                DELETE FROM \`chatter.examples_test\`
+                DELETE FROM \`chatter.examples\`
                 WHERE model = '${selectedModel.replace(/'/g, "\\'")}'
                   AND explore = '${selectedExplore.replace(/'/g, "\\'")}'
             `;
     
             const insertQuery = `
-                INSERT INTO \`chatter.examples_test\` (
+                INSERT INTO \`chatter.examples\` (
                     input_question,
                     output_json,
                     explore,
