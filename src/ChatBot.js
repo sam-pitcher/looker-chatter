@@ -22,6 +22,7 @@ const ChatBot = () => {
     const [explores, setExplores] = useState([]);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
+    const [selectedSortMeasure, setSelectedSortMeasure] = useState('');
     const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
 
@@ -91,6 +92,20 @@ const ChatBot = () => {
         console.log('json_bi response: ', response)
 
         const { dimensions, measures } = response.metadata.fields;
+
+        if ((!measures || measures.length === 0) && dimensions && dimensions.length > 0) {
+            console.log("Only dimensions present. Rendering table.");
+            setMessages(prevMessages => [
+                ...prevMessages,
+                {
+                    sender: 'bot',
+                    type: 'table',
+                    data: response.rows,
+                    dimensions: dimensions
+                }
+            ]);
+            return null; // Prevent further processing since a table is already rendered
+        }
 
         if (!dimensions || dimensions.length === 0) {
             return null;
@@ -228,12 +243,15 @@ const ChatBot = () => {
 
     const handleSortChange = (message, direction) => {
         const newData = { ...message.chartData };
+        const sortMeasure = selectedSortMeasure || message.measures[0].name;
         const sortMultiplier = direction === 'asc' ? 1 : -1;
 
-        // Calculate total values for each label (sum across all datasets)
+        // Calculate total values for each label based on the selected measure
         const labelTotals = newData.labels.map((label, index) => ({
             label,
-            total: newData.datasets.reduce((sum, dataset) => sum + dataset.data[index], 0),
+            total: newData.datasets
+                .filter(dataset => dataset.label.includes(sortMeasure))
+                .reduce((sum, dataset) => sum + dataset.data[index], 0),
             originalIndex: index
         }));
 
@@ -325,6 +343,11 @@ const ChatBot = () => {
     };
 
     const handleSendMessage = async () => {
+        if (!selectedModel || !selectedExplore) {
+            alert('Please select a Model and Explore before sending a message.');
+            return;
+        }
+
         if (!input.trim()) return;
 
         setIsSummarizing(true);
@@ -639,7 +662,21 @@ const ChatBot = () => {
                 </>
             )}
             <div style={styles.controlGroup}>
-                <label style={styles.controlLabel}>Sort:</label>
+                <label style={styles.controlLabel}>Sort By:</label>
+                <select
+                    value={selectedSortMeasure || (message.measures[0]?.name || '')}
+                    onChange={(e) => setSelectedSortMeasure(e.target.value)}
+                    style={styles.select}
+                >
+                    {message.measures.map((measure) => (
+                        <option key={measure.name} value={measure.name}>
+                            {measure.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div style={styles.controlGroup}>
+                <label style={styles.controlLabel}>Sort Order:</label>
                 <select
                     value={message.sortDirection}
                     onChange={(e) => onSortChange(message, e.target.value)}
@@ -665,6 +702,33 @@ const ChatBot = () => {
     );
 
     const MessageContent = ({ message }) => {
+        if (message.type === 'table' && message.dimensions) {
+            console.log('TABLE WITH ONLY DIMENSIONS')
+            return (
+                <div style={styles.tableContainer}>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                {message.dimensions.map(dim => (
+                                    <th key={dim.name} style={styles.tableHeader}>{dim.label}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {message.data.map((row, index) => (
+                                <tr key={index}>
+                                    {message.dimensions.map(dim => (
+                                        <td key={dim.name} style={styles.tableCell}>
+                                            {row[dim.name].value}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        }
         if (message.type === 'chart') {
             if (message.viewType === 'table') {
                 return (
@@ -706,12 +770,6 @@ const ChatBot = () => {
         return (
             <>
                 <pre style={styles.preformatted}>{message.text}</pre>
-                {isSummarizing && message.sender === 'bot' && message.type === 'text' && (
-                    <div style={styles.loadingSpinner}>
-                        <Loader className="animate-spin" size={16} />
-                        <span>Generating summary...</span>
-                    </div>
-                )}
             </>
         );
     };
@@ -759,8 +817,20 @@ const ChatBot = () => {
                     >
                         <MessageContent message={msg} />
                     </div>
-
                 ))}
+                {isSummarizing && (
+                    <div style={{
+                        ...styles.message,
+                        alignSelf: 'flex-start',
+                        backgroundColor: '#f4f4f4',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px'
+                    }}>
+                        <Loader className="animate-spin" size={16} />
+                        <span>Generating summary...</span>
+                    </div>
+                )}
             </div>
             <div style={styles.inputSection}>
                 <textarea
@@ -776,17 +846,11 @@ const ChatBot = () => {
                     placeholder="Type your message..."
 
                 />
-                {isSummarizing && (
-                    <div style={styles.loadingSpinner}>
-                        <Loader className="animate-spin" size={16} />
-                        <span style={{ marginLeft: '8px' }}>Generating summary...</span>
-                    </div>
-                )}
                 <button
                     onClick={handleSendMessage}
                     style={styles.button}
                 >
-                   {'Send'}
+                    {'Send'}
                 </button>
             </div>
         </div>
