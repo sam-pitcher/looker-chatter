@@ -6,6 +6,7 @@ import { Query, Visualization } from '@looker/visualizations'
 import ChatBot from './ChatBot';
 import Examples from './Examples';
 import Fields from './Fields';
+import ExtraContext from './ExtraContext';
 
 export const HelloWorld = () => {
   const { core40SDK } = useContext(ExtensionContext)
@@ -48,6 +49,12 @@ export const HelloWorld = () => {
             <div>
             <h1>Fields set up.</h1>
               <Fields />
+            </div>
+          </Tab2>
+          <Tab2 id="13" label="Extra Context">
+            <div>
+            <h1>Extra Context set up.</h1>
+              <ExtraContext />
             </div>
           </Tab2>
         </Tabs2>

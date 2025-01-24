@@ -22,7 +22,6 @@ const ChatBot = () => {
     const [explores, setExplores] = useState([]);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
     const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
 
@@ -89,10 +88,19 @@ const ChatBot = () => {
             .replace(/"/g, "'");
         summariseJSONResponse(rowsJSONString)
         console.log('json_bi rows response string: ', rowsJSONString)
+        console.log('json_bi response: ', response)
 
         const { dimensions, measures } = response.metadata.fields;
 
         if (!dimensions || dimensions.length === 0) {
+            return null;
+            // return {
+            //     type: 'text',
+            //     data: response.rows
+            // };
+        }
+
+        if (!measures || measures.length === 0) {
             return null;
             // return {
             //     type: 'text',
@@ -118,7 +126,7 @@ const ChatBot = () => {
         };
     };
 
-    const processDataWithPivot = (rows, primaryDim, pivotDim, measures, viewType) => {
+    const processDataWithPivot = (rows, primaryDim, pivotDim, measures, viewType = 'bar') => {
         if (!pivotDim) {
             // If no pivot dimension, process normally
             const datasets = measures.map((measure, measureIndex) => {
@@ -133,7 +141,9 @@ const ChatBot = () => {
                     borderColor: generateColor(measureIndex, 1),
                     borderWidth: 1,
                     tension: 0.1,
-                    yAxisID: `y${measureIndex}`
+                    yAxisID: `y${measureIndex}`,
+                    type: viewType === 'line' ? 'line' : 'bar', // Support stacked bar
+                    stack: 'stack' // New property for stacked bar charts
                 };
             });
 
@@ -165,7 +175,8 @@ const ChatBot = () => {
                     borderWidth: 1,
                     tension: 0.1,
                     yAxisID: `y${measureIndex}`,
-                    type: viewType === 'line' ? 'line' : undefined, // Only set type for line charts
+                    type: viewType === 'line' ? 'line' : 'bar',
+                    stack: 'stack' // Support stacked bar charts
                 });
             });
         });
@@ -264,7 +275,7 @@ const ChatBot = () => {
     };
 
     const summariseJSONResponse = async (json_input) => {
-        setIsSummarizing(true);
+        // setIsSummarizing(true);
         try {
             const jsonString = JSON.stringify(json_input, null, 2);
 
@@ -315,6 +326,8 @@ const ChatBot = () => {
 
     const handleSendMessage = async () => {
         if (!input.trim()) return;
+
+        setIsSummarizing(true);
 
         const inputClean = input
             .replace(/[,]/g, '') // Remove commas
@@ -424,7 +437,8 @@ const ChatBot = () => {
                 ticks: {
                     maxRotation: 45,
                     minRotation: 45
-                }
+                },
+                stacked: true // Enable stacked x-axis
             }
         };
 
@@ -435,6 +449,7 @@ const ChatBot = () => {
                 display: true,
                 position: index === 0 ? 'left' : 'right',
                 beginAtZero: true,
+                stacked: true, // Enable stacked y-axis
                 grid: {
                     drawOnChartArea: index === 0,
                 },
@@ -744,6 +759,7 @@ const ChatBot = () => {
                     >
                         <MessageContent message={msg} />
                     </div>
+
                 ))}
             </div>
             <div style={styles.inputSection}>
@@ -758,17 +774,19 @@ const ChatBot = () => {
                     }}
                     style={styles.input}
                     placeholder="Type your message..."
+
                 />
+                {isSummarizing && (
+                    <div style={styles.loadingSpinner}>
+                        <Loader className="animate-spin" size={16} />
+                        <span style={{ marginLeft: '8px' }}>Generating summary...</span>
+                    </div>
+                )}
                 <button
                     onClick={handleSendMessage}
                     style={styles.button}
-                    disabled={isLoading}
                 >
-                    {isLoading ? (
-                        <Loader className="animate-spin" size={16} />
-                    ) : (
-                        'Send'
-                    )}
+                   {'Send'}
                 </button>
             </div>
         </div>

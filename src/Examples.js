@@ -270,7 +270,7 @@ const Examples = () => {
                             'query.view': selectedExplore
                         },
                         sorts: ["history.count desc"],
-                        limit: 3
+                        limit: 10
                     },
                     result_format: 'json',
                 })
@@ -585,7 +585,7 @@ const Examples = () => {
                                                         onClick={() => handleEditJson(index)}
                                                         style={styles.actionButton}
                                                     >
-                                                        Edit JSON
+                                                        Edit
                                                     </button>
                                                     <button
                                                         onClick={() => handleDeleteRow(index)}
