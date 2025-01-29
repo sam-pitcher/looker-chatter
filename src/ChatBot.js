@@ -86,19 +86,24 @@ const ChatBot = () => {
             console.error('Invalid response structure');
             return null;
         }
-
+    
         const rowsJSONString = JSON.stringify(response.rows)
             .replace(/\\u0027/g, "'")
             .replace(/\\/g, "")
             .replace(/"/g, "'");
-        summariseJSONResponse(rowsJSONString)
-        console.log('json_bi rows response string: ', rowsJSONString)
-        console.log('json_bi response: ', response)
-
+        summariseJSONResponse(rowsJSONString);
+        console.log('json_bi rows response string: ', rowsJSONString);
+        console.log('json_bi response: ', response);
+    
         const { dimensions, measures } = response.metadata.fields;
-
+    
+        // Case 1: Only measures - return null to just show summary
+        if ((!dimensions || dimensions.length === 0) && measures && measures.length > 0) {
+            return null;
+        }
+    
+        // Case 2: Only dimensions - return table view
         if ((!measures || measures.length === 0) && dimensions && dimensions.length > 0) {
-            console.log("Only dimensions present. Rendering table.");
             setMessages(prevMessages => [
                 ...prevMessages,
                 {
@@ -108,41 +113,111 @@ const ChatBot = () => {
                     dimensions: dimensions
                 }
             ]);
-            return null; // Prevent further processing since a table is already rendered
-        }
-
-        if (!dimensions || dimensions.length === 0) {
             return null;
-            // return {
-            //     type: 'text',
-            //     data: response.rows
-            // };
         }
-
-        if (!measures || measures.length === 0) {
-            return null;
-            // return {
-            //     type: 'text',
-            //     data: response.rows
-            // };
-        }
-
-        const primaryDimension = dimensions[0].name;
-        const pivotDimension = null; // Initialize with no pivot
-
-        const processedData = processDataWithPivot(response.rows, primaryDimension, pivotDimension, measures);
-
+    
+        // Case 3: One or more dimensions and measures
         return {
             type: 'chart',
-            data: processedData,
+            data: processDataWithDimensions(response.rows, dimensions, measures),
             dimensions: dimensions,
             measures: measures,
-            currentDimension: primaryDimension,
-            pivotDimension: pivotDimension,
+            currentDimension: null, // Will be set in processDataWithDimensions
+            pivotDimension: null,
             viewType: 'bar',
             sortDirection: 'asc',
             rawData: response.rows
         };
+    };
+
+    const processWithSingleDimension = (rows, dimension, measures) => {
+        const labels = [...new Set(rows.map(row => row[dimension.name].value))];
+        
+        const datasets = measures.map((measure, index) => ({
+            label: measure.label,
+            data: labels.map(label => {
+                const matchingRow = rows.find(row => row[dimension.name].value === label);
+                return matchingRow ? matchingRow[measure.name].value : 0;
+            }),
+            backgroundColor: generateColor(index),
+            borderColor: generateColor(index, 1),
+            borderWidth: 1,
+            tension: 0.1,
+            yAxisID: `y${index}`,
+            type: 'bar' // Default to bar, can be changed to line
+        }));
+    
+        return { labels, datasets };
+    };
+    
+    const processWithMultipleDimensions = (rows, dimensions, measures, pivotDimension = null) => {
+        if (pivotDimension) {
+            // Handle pivoted view
+            const nonPivotDimensions = dimensions.filter(d => d.name !== pivotDimension);
+            const concatenatedLabels = [...new Set(rows.map(row => 
+                nonPivotDimensions.map(dim => row[dim.name].value).join(' - ')
+            ))];
+            
+            const pivotValues = [...new Set(rows.map(row => row[pivotDimension].value))];
+            
+            const datasets = [];
+            measures.forEach((measure, measureIndex) => {
+                pivotValues.forEach((pivotValue, pivotIndex) => {
+                    const data = concatenatedLabels.map(label => {
+                        const matchingRow = rows.find(row => 
+                            nonPivotDimensions.map(dim => row[dim.name].value).join(' - ') === label &&
+                            row[pivotDimension].value === pivotValue
+                        );
+                        return matchingRow ? matchingRow[measure.name].value : 0;
+                    });
+    
+                    datasets.push({
+                        label: `${measure.label} - ${pivotValue}`,
+                        data: data,
+                        backgroundColor: generateColor(measureIndex * pivotValues.length + pivotIndex),
+                        borderColor: generateColor(measureIndex * pivotValues.length + pivotIndex, 1),
+                        borderWidth: 1,
+                        tension: 0.1,
+                        yAxisID: `y${measureIndex}`,
+                        stack: measure.label // Stack by measure
+                    });
+                });
+            });
+    
+            return { labels: concatenatedLabels, datasets };
+        } else {
+            // Handle concatenated view without pivot
+            const concatenatedLabels = [...new Set(rows.map(row => 
+                dimensions.map(dim => row[dim.name].value).join(' - ')
+            ))];
+    
+            const datasets = measures.map((measure, index) => ({
+                label: measure.label,
+                data: concatenatedLabels.map(label => {
+                    const matchingRow = rows.find(row => 
+                        dimensions.map(dim => row[dim.name].value).join(' - ') === label
+                    );
+                    return matchingRow ? matchingRow[measure.name].value : 0;
+                }),
+                backgroundColor: generateColor(index),
+                borderColor: generateColor(index, 1),
+                borderWidth: 1,
+                tension: 0.1,
+                yAxisID: `y${index}`
+            }));
+    
+            return { labels: concatenatedLabels, datasets };
+        }
+    };
+
+    const processDataWithDimensions = (rows, dimensions, measures, pivotDimension = null) => {
+        // If there's only one dimension, use it directly
+        if (dimensions.length === 1) {
+            return processWithSingleDimension(rows, dimensions[0], measures);
+        }
+    
+        // For multiple dimensions, handle concatenation and pivoting
+        return processWithMultipleDimensions(rows, dimensions, measures, pivotDimension);
     };
 
     const processDataWithPivot = (rows, primaryDim, pivotDim, measures, viewType = 'bar') => {
@@ -225,16 +300,15 @@ const ChatBot = () => {
 
     const handleDimensionChange = (message, dimensionName, pivotDimension = null) => {
         const response = message.queryResponse;
-        const { measures } = response.metadata.fields;
-
-        const processedData = processDataWithPivot(
+        const { dimensions, measures } = response.metadata.fields;
+    
+        const processedData = processDataWithDimensions(
             response.rows,
-            dimensionName,
-            pivotDimension,
+            dimensions,
             measures,
-            message.viewType
+            pivotDimension
         );
-
+    
         setMessages(prevMessages => prevMessages.map(msg =>
             msg === message ? {
                 ...msg,
@@ -466,11 +540,10 @@ const ChatBot = () => {
                 ticks: {
                     maxRotation: 45,
                     minRotation: 45
-                },
-                stacked: true // Enable stacked x-axis
+                }
             }
         };
-
+    
         // Create separate y-axes for each measure
         measures.forEach((measure, index) => {
             scales[`y${index}`] = {
@@ -478,7 +551,6 @@ const ChatBot = () => {
                 display: true,
                 position: index === 0 ? 'left' : 'right',
                 beginAtZero: true,
-                stacked: true, // Enable stacked y-axis
                 grid: {
                     drawOnChartArea: index === 0,
                 },
@@ -493,7 +565,7 @@ const ChatBot = () => {
                 }
             };
         });
-
+    
         return {
             responsive: true,
             maintainAspectRatio: false,
