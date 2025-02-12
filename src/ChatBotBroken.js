@@ -1,29 +1,28 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
-import { Bar, Line } from 'react-chartjs-2';
+// import { Bar, Line } from 'react-chartjs-2';
 import { Loader } from 'lucide-react';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js';
+import { Chart } from "react-google-charts";
 import { styles } from './styles'
 
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    LineElement,
-    PointElement,
-    Title,
-    Tooltip,
-    Legend
-);
+// ChartJS.register(
+//     CategoryScale,
+//     LinearScale,
+//     BarElement,
+//     LineElement,
+//     PointElement,
+//     Title,
+//     Tooltip,
+//     Legend
+// );
 
-const ChatBot = () => {
+const ChatBotOLD = () => {
     const [selectedModel, setSelectedModel] = useState('');
     const [selectedExplore, setSelectedExplore] = useState('');
     const [models, setModels] = useState([]);
     const [explores, setExplores] = useState([]);
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
-    const [selectedSortMeasure, setSelectedSortMeasure] = useState('');
     const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
 
@@ -86,288 +85,147 @@ const ChatBot = () => {
             console.error('Invalid response structure');
             return null;
         }
-    
+
         const rowsJSONString = JSON.stringify(response.rows)
             .replace(/\\u0027/g, "'")
             .replace(/\\/g, "")
             .replace(/"/g, "'");
         summariseJSONResponse(rowsJSONString);
-        console.log('json_bi rows response string: ', rowsJSONString);
-        console.log('json_bi response: ', response);
-    
+
         const { dimensions, measures } = response.metadata.fields;
-    
+
         // Case 1: Only measures - return null to just show summary
         if ((!dimensions || dimensions.length === 0) && measures && measures.length > 0) {
             return null;
         }
-    
+
         // Case 2: Only dimensions - return table view
         if ((!measures || measures.length === 0) && dimensions && dimensions.length > 0) {
-            setMessages(prevMessages => [
-                ...prevMessages,
-                {
-                    sender: 'bot',
-                    type: 'table',
-                    data: response.rows,
-                    dimensions: dimensions
-                }
-            ]);
-            return null;
+            return {
+                type: 'table',
+                data: response.rows,
+                dimensions: dimensions
+            };
         }
-    
+
         // Case 3: One or more dimensions and measures
-        return {
-            type: 'chart',
-            data: processDataWithDimensions(response.rows, dimensions, measures),
-            dimensions: dimensions,
-            measures: measures,
-            currentDimension: null, // Will be set in processDataWithDimensions
-            pivotDimension: null,
-            viewType: 'bar',
-            sortDirection: 'asc',
-            rawData: response.rows
-        };
+        return drawVisualizationFromJson(response);
+        // const processedData = processDataWithDimensions(response.rows, dimensions, measures);
+        // return {
+        //     type: 'chart',
+        //     data: processedData,
+        //     dimensions: dimensions,
+        //     measures: measures,
+        //     viewType: 'bar', // Default view type
+        //     sortDirection: 'asc',
+        //     rawData: response.rows
+        // };
     };
 
-    const processWithSingleDimension = (rows, dimension, measures) => {
-        const labels = [...new Set(rows.map(row => row[dimension.name].value))];
-        
-        const datasets = measures.map((measure, index) => ({
-            label: measure.label,
-            data: labels.map(label => {
-                const matchingRow = rows.find(row => row[dimension.name].value === label);
-                return matchingRow ? matchingRow[measure.name].value : 0;
-            }),
-            backgroundColor: generateColor(index),
-            borderColor: generateColor(index, 1),
-            borderWidth: 1,
-            tension: 0.1,
-            yAxisID: `y${index}`,
-            type: 'bar' // Default to bar, can be changed to line
-        }));
     
-        return { labels, datasets };
-    };
-    
-    const processWithMultipleDimensions = (rows, dimensions, measures, pivotDimension = null) => {
-        if (pivotDimension) {
-            // Handle pivoted view
-            const nonPivotDimensions = dimensions.filter(d => d.name !== pivotDimension);
-            const concatenatedLabels = [...new Set(rows.map(row => 
-                nonPivotDimensions.map(dim => row[dim.name].value).join(' - ')
-            ))];
-            
-            const pivotValues = [...new Set(rows.map(row => row[pivotDimension].value))];
-            
-            const datasets = [];
-            measures.forEach((measure, measureIndex) => {
-                pivotValues.forEach((pivotValue, pivotIndex) => {
-                    const data = concatenatedLabels.map(label => {
-                        const matchingRow = rows.find(row => 
-                            nonPivotDimensions.map(dim => row[dim.name].value).join(' - ') === label &&
-                            row[pivotDimension].value === pivotValue
-                        );
-                        return matchingRow ? matchingRow[measure.name].value : 0;
-                    });
-    
-                    datasets.push({
-                        label: `${measure.label} - ${pivotValue}`,
-                        data: data,
-                        backgroundColor: generateColor(measureIndex * pivotValues.length + pivotIndex),
-                        borderColor: generateColor(measureIndex * pivotValues.length + pivotIndex, 1),
-                        borderWidth: 1,
-                        tension: 0.1,
-                        yAxisID: `y${measureIndex}`,
-                        stack: measure.label // Stack by measure
-                    });
-                });
-            });
-    
-            return { labels: concatenatedLabels, datasets };
-        } else {
-            // Handle concatenated view without pivot
-            const concatenatedLabels = [...new Set(rows.map(row => 
-                dimensions.map(dim => row[dim.name].value).join(' - ')
-            ))];
-    
-            const datasets = measures.map((measure, index) => ({
-                label: measure.label,
-                data: concatenatedLabels.map(label => {
-                    const matchingRow = rows.find(row => 
-                        dimensions.map(dim => row[dim.name].value).join(' - ') === label
-                    );
-                    return matchingRow ? matchingRow[measure.name].value : 0;
-                }),
-                backgroundColor: generateColor(index),
-                borderColor: generateColor(index, 1),
-                borderWidth: 1,
-                tension: 0.1,
-                yAxisID: `y${index}`
-            }));
-    
-            return { labels: concatenatedLabels, datasets };
-        }
-    };
 
-    const processDataWithDimensions = (rows, dimensions, measures, pivotDimension = null) => {
-        // If there's only one dimension, use it directly
-        if (dimensions.length === 1) {
-            return processWithSingleDimension(rows, dimensions[0], measures);
-        }
-    
-        // For multiple dimensions, handle concatenation and pivoting
-        return processWithMultipleDimensions(rows, dimensions, measures, pivotDimension);
-    };
+    const drawVisualizationFromJson = (jsonPayload) => {
 
-    const processDataWithPivot = (rows, primaryDim, pivotDim, measures, viewType = 'bar') => {
-        if (!pivotDim) {
-            // If no pivot dimension, process normally
-            const datasets = measures.map((measure, measureIndex) => {
-                const groupedData = groupDataByDimension(rows, primaryDim, measure.name);
-                const labels = Object.keys(groupedData);
-                const values = Object.values(groupedData);
+        // Extract dimensions and measures
+        const dimensions = jsonPayload.metadata.fields.dimensions.map(dim => dim.name);
+        const measures = jsonPayload.metadata.fields.measures.map(meas => meas.name);
 
-                return {
-                    label: measure.label,
-                    data: values,
-                    backgroundColor: generateColor(measureIndex),
-                    borderColor: generateColor(measureIndex, 1),
-                    borderWidth: 1,
-                    tension: 0.1,
-                    yAxisID: `y${measureIndex}`,
-                    type: viewType === 'line' ? 'line' : 'bar', // Support stacked bar
-                    stack: 'stack' // New property for stacked bar charts
-                };
-            });
-
-            const labels = Object.keys(groupDataByDimension(rows, primaryDim, measures[0].name));
-            return { labels, datasets };
+        if (dimensions.length < 1 || measures.length < 1) {
+            console.error("The dataset requires at least 1 dimension and 1 measure.");
+            return;
         }
 
-        // Process with pivot
-        const uniquePivotValues = [...new Set(rows.map(row => row[pivotDim].value))].sort();
-        const primaryValues = [...new Set(rows.map(row => row[primaryDim].value))].sort();
+        // Create header row dynamically
+        let headers = [dimensions[0]]; // First dimension as category
+        let pivotDimension = dimensions[1]; // Dimension used for pivoting
+        let pivotValues = new Set();
 
-        const datasets = [];
-        measures.forEach((measure, measureIndex) => {
-            uniquePivotValues.forEach((pivotValue, pivotIndex) => {
-                const data = primaryValues.map(primaryValue => {
-                    const matchingRows = rows.filter(row =>
-                        row[primaryDim].value === primaryValue &&
-                        row[pivotDim].value === pivotValue
-                    );
-                    if (matchingRows.length === 0) return 0;
-                    return matchingRows.reduce((sum, row) => sum + row[measure.name].value, 0) / matchingRows.length;
-                });
+        // Collect unique pivot values
+        jsonPayload.rows.forEach(row => {
+            let pivotValue = row[pivotDimension]?.value || "Unknown";
+            pivotValues.add(pivotValue);
+        });
 
-                datasets.push({
-                    label: `${measure.label} - ${pivotValue}`,
-                    data: data,
-                    backgroundColor: generateColor(measureIndex * uniquePivotValues.length + pivotIndex),
-                    borderColor: generateColor(measureIndex * uniquePivotValues.length + pivotIndex, 1),
-                    borderWidth: 1,
-                    tension: 0.1,
-                    yAxisID: `y${measureIndex}`,
-                    type: viewType === 'line' ? 'line' : 'bar',
-                    stack: 'stack' // Support stacked bar charts
-                });
+        // Add pivoted measure columns
+        pivotValues.forEach(value => {
+            measures.forEach(measure => {
+                headers.push(`${value} - ${measure}`);
             });
         });
 
-        return { labels: primaryValues, datasets };
-    };
+        // Prepare data array (start with headers)
+        let dataArray = [headers];
 
-    const groupDataByDimension = (rows, dimension, measure) => {
-        const groupedData = rows.reduce((acc, row) => {
-            const key = row[dimension].value;
-            if (!acc[key]) {
-                acc[key] = {
-                    sum: 0,
-                    count: 0
-                };
+        // Map to store aggregated data
+        let rowMap = {};
+
+        jsonPayload.rows.forEach(row => {
+            let category = row[dimensions[0]]?.value?.toString() || "Unknown";
+            let pivotValue = row[pivotDimension]?.value || "Unknown";
+
+            if (!rowMap[category]) {
+                rowMap[category] = { category, values: {} };
             }
-            acc[key].sum += row[measure].value;
-            acc[key].count += 1;
-            return acc;
-        }, {});
 
-        return Object.entries(groupedData).reduce((acc, [key, { sum, count }]) => {
-            acc[key] = sum / count;
-            return acc;
-        }, {});
-    };
+            // Store measure values
+            let measureValues = measures.map(measure => row[measure]?.value || 0);
+            rowMap[category].values[pivotValue] = measureValues;
+        });
 
-    const handleDimensionChange = (message, dimensionName, pivotDimension = null) => {
-        const response = message.queryResponse;
-        const { dimensions, measures } = response.metadata.fields;
-    
-        const processedData = processDataWithDimensions(
-            response.rows,
-            dimensions,
-            measures,
-            pivotDimension
-        );
-    
-        setMessages(prevMessages => prevMessages.map(msg =>
-            msg === message ? {
-                ...msg,
-                chartData: processedData,
-                currentDimension: dimensionName,
-                pivotDimension: pivotDimension
-            } : msg
-        ));
-    };
+        // Build rows dynamically
+        for (let category in rowMap) {
+            let row = rowMap[category];
+            let rowData = [row.category];
 
-    const handleSortChange = (message, direction) => {
-        const newData = { ...message.chartData };
-        const sortMeasure = selectedSortMeasure || message.measures[0].name;
-        const sortMultiplier = direction === 'asc' ? 1 : -1;
+            pivotValues.forEach(value => {
+                let values = row.values[value] || measures.map(() => 0); // Default missing values to 0
+                rowData.push(...values.map(val => Number(val)));
+            });
 
-        // Calculate total values for each label based on the selected measure
-        const labelTotals = newData.labels.map((label, index) => ({
-            label,
-            total: newData.datasets
-                .filter(dataset => dataset.label.includes(sortMeasure))
-                .reduce((sum, dataset) => sum + dataset.data[index], 0),
-            originalIndex: index
-        }));
+            dataArray.push(rowData);
+        }
 
-        // Sort labels based on totals
-        labelTotals.sort((a, b) => (a.total - b.total) * sortMultiplier);
+        // Convert to Google Charts format
+        var data = google.visualization.arrayToDataTable(dataArray);
 
-        // Reconstruct the data maintaining all original data points
-        const newLabels = labelTotals.map(item => item.label);
-        const newDatasets = newData.datasets.map(dataset => ({
-            ...dataset,
-            data: labelTotals.map(item => dataset.data[item.originalIndex])
-        }));
+        // Generate dynamic vAxes and series mapping
+        let vAxes = {};
+        let series = {};
+        let measureAxisMap = {};
+        let axisIndex = 0;
 
-        setMessages(prevMessages => prevMessages.map(msg =>
-            msg === message ? {
-                ...msg,
-                chartData: { ...newData, labels: newLabels, datasets: newDatasets },
-                sortDirection: direction
-            } : msg
-        ));
-    };
+        // Assign one Y-axis per measure
+        measures.forEach((measure, measureIndex) => {
+            vAxes[axisIndex] = { title: measure };
+            measureAxisMap[measure] = axisIndex;
+            axisIndex++;
+        });
 
-    const handleViewTypeChange = (message, viewType) => {
-        const processedData = processDataWithPivot(
-            message.queryResponse.rows,
-            message.currentDimension,
-            message.pivotDimension,
-            message.measures,
-            viewType
-        );
+        // Map each series to the correct axis
+        headers.slice(1).forEach((header, index) => {
+            let measure = measures.find(meas => header.includes(meas));
+            if (measure) {
+                series[index] = { targetAxisIndex: measureAxisMap[measure] };
+            }
+        });
 
-        setMessages(prevMessages => prevMessages.map(msg =>
-            msg === message ? {
-                ...msg,
-                viewType,
-                chartData: processedData
-            } : msg
-        ));
+        var options = {
+            title: 'Dynamic Data Visualization with Multiple Axes',
+            vAxes: vAxes,
+            hAxis: { title: dimensions[0] },
+            seriesType: 'bars',
+            series: series,
+            legend: { position: 'bottom' }
+        };
+
+        var chart = new google.visualization.ComboChart(document.getElementById('chart_div'));
+        // return chart;
+        // chart.draw(data, options);
+        return {
+            type: 'chart',
+            chart: chart,
+            rawData: data
+        };
     };
 
     // Function that summarises response from runQueryFromJson
@@ -534,67 +392,6 @@ const ChatBot = () => {
         }
     };
 
-    const getChartOptions = (measures) => {
-        const scales = {
-            x: {
-                ticks: {
-                    maxRotation: 45,
-                    minRotation: 45
-                }
-            }
-        };
-    
-        // Create separate y-axes for each measure
-        measures.forEach((measure, index) => {
-            scales[`y${index}`] = {
-                type: 'linear',
-                display: true,
-                position: index === 0 ? 'left' : 'right',
-                beginAtZero: true,
-                grid: {
-                    drawOnChartArea: index === 0,
-                },
-                title: {
-                    display: true,
-                    text: measure.label
-                },
-                ticks: {
-                    callback: function (value) {
-                        return value.toLocaleString();
-                    }
-                }
-            };
-        });
-    
-        return {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'top',
-                    align: 'start',
-                    labels: {
-                        usePointStyle: true,
-                        padding: 15,
-                        boxWidth: 10,
-                    }
-                },
-                title: {
-                    display: true,
-                    text: 'Data Visualization',
-                    padding: {
-                        top: 10,
-                        bottom: 20
-                    },
-                    font: {
-                        size: 16
-                    }
-                }
-            },
-            scales
-        };
-    };
-
     const DataTable = ({ data, dimensions, measures, pivotDimension }) => {
         // If there's no pivot dimension, render the regular table
         if (!pivotDimension) {
@@ -701,84 +498,6 @@ const ChatBot = () => {
         );
     };
 
-    const ChartControls = ({ message, onDimensionChange, onSortChange, onViewTypeChange }) => (
-        <div style={styles.chartControls}>
-            {message.dimensions && message.dimensions.length > 1 && (
-                <>
-                    <div style={styles.controlGroup}>
-                        <label style={styles.controlLabel}>Primary Dimension:</label>
-                        <select
-                            value={message.currentDimension}
-                            onChange={(e) => onDimensionChange(message, e.target.value, message.pivotDimension)}
-                            style={styles.select}
-                        >
-                            {message.dimensions.map((dim) => (
-                                <option key={dim.name} value={dim.name}>
-                                    {dim.label}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <div style={styles.controlGroup}>
-                        <label style={styles.controlLabel}>Pivot By:</label>
-                        <select
-                            value={message.pivotDimension || ''}
-                            onChange={(e) => onDimensionChange(message, message.currentDimension, e.target.value || null)}
-                            style={styles.select}
-                        >
-                            <option value="">No Pivot</option>
-                            {message.dimensions
-                                .filter(dim => dim.name !== message.currentDimension)
-                                .map((dim) => (
-                                    <option key={dim.name} value={dim.name}>
-                                        {dim.label}
-                                    </option>
-                                ))
-                            }
-                        </select>
-                    </div>
-                </>
-            )}
-            <div style={styles.controlGroup}>
-                <label style={styles.controlLabel}>Sort By:</label>
-                <select
-                    value={selectedSortMeasure || (message.measures[0]?.name || '')}
-                    onChange={(e) => setSelectedSortMeasure(e.target.value)}
-                    style={styles.select}
-                >
-                    {message.measures.map((measure) => (
-                        <option key={measure.name} value={measure.name}>
-                            {measure.label}
-                        </option>
-                    ))}
-                </select>
-            </div>
-            <div style={styles.controlGroup}>
-                <label style={styles.controlLabel}>Sort Order:</label>
-                <select
-                    value={message.sortDirection}
-                    onChange={(e) => onSortChange(message, e.target.value)}
-                    style={styles.select}
-                >
-                    <option value="asc">Ascending</option>
-                    <option value="desc">Descending</option>
-                </select>
-            </div>
-            <div style={styles.controlGroup}>
-                <label style={styles.controlLabel}>View Type:</label>
-                <select
-                    value={message.viewType}
-                    onChange={(e) => onViewTypeChange(message, e.target.value)}
-                    style={styles.select}
-                >
-                    <option value="table">Table</option>
-                    <option value="bar">Bar Chart</option>
-                    <option value="line">Line Chart</option>
-                </select>
-            </div>
-        </div>
-    );
-
     const MessageContent = ({ message }) => {
         if (message.type === 'table' && message.dimensions) {
             console.log('TABLE WITH ONLY DIMENSIONS')
@@ -811,12 +530,6 @@ const ChatBot = () => {
             if (message.viewType === 'table') {
                 return (
                     <div style={styles.chartContainer}>
-                        <ChartControls
-                            message={message}
-                            onDimensionChange={handleDimensionChange}
-                            onSortChange={handleSortChange}
-                            onViewTypeChange={handleViewTypeChange}
-                        />
                         <DataTable
                             data={message.rawData}
                             dimensions={message.dimensions}
@@ -829,16 +542,9 @@ const ChatBot = () => {
                 const ChartComponent = message.viewType === 'line' ? Line : Bar;
                 return (
                     <div style={styles.chartContainer}>
-                        <ChartControls
-                            message={message}
-                            onDimensionChange={handleDimensionChange}
-                            onSortChange={handleSortChange}
-                            onViewTypeChange={handleViewTypeChange}
-                        />
                         <div style={styles.messageChart}>
                             <ChartComponent
                                 data={message.chartData}
-                                options={getChartOptions(message.measures)}
                             />
                         </div>
                     </div>

@@ -19,7 +19,8 @@ jspm_packages/
 .vscode/
 
 # Production build files
-dist/
+dist/bundle.js.LICENSE.txt
+dist/bundle.js.map
 build/
 
 # Environment files
