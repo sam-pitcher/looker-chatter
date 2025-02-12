@@ -2,7 +2,10 @@ import React, { useEffect, useState, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
 import { Loader } from 'lucide-react';
 import { Chart } from "react-google-charts";
-import { styles } from './styles'
+import { styles, TypingDotsContainer, TypingDot, MessageContainer, GlobalStyle } from './styles';
+import styled, { createGlobalStyle } from 'styled-components';
+
+
 
 const ChatBot = () => {
     const [selectedModel, setSelectedModel] = useState('');
@@ -10,9 +13,38 @@ const ChatBot = () => {
     const [models, setModels] = useState([]);
     const [explores, setExplores] = useState([]);
     const [messages, setMessages] = useState([]);
+    const [userInfo, setUserInfo] = useState('');
     const [input, setInput] = useState('');
     const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
+
+    useEffect(() => {
+        const fetchAvatar = async () => {
+            try {
+                const user = await core40SDK.ok(core40SDK.me());
+                console.log('user: ', user)
+                setUserInfo(user);
+            } catch (error) {
+                console.error('Error fetching LookML models:', error);
+            }
+        };
+        fetchAvatar();
+    }, []);
+
+    const Avatar = styled.img`
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  order: ${props => props.isUser ? 2 : 0};
+`;
+
+    const MessageWrapper = styled.div`
+  display: flex;
+  align-items: flex-start;
+  justify-content: ${props => props.isUser ? 'flex-end' : 'flex-start'};
+  margin: 8px 0;
+  gap: 8px;
+`;
 
     useEffect(() => {
         const fetchModels = async () => {
@@ -420,6 +452,18 @@ const ChatBot = () => {
             return `rgba(0, 0, 255, ${percentage * 0.5})`; // Blue heatmap
         };
 
+        // Global styles for animations
+        const GlobalStyle = createGlobalStyle`
+            @keyframes typingDots {
+            0%, 80%, 100% {
+                transform: scale(0.3);
+            }
+            40% {
+                transform: scale(1.0);
+            }
+            }
+            `;
+
         return (
             <div style={styles.tableContainer}>
                 <table style={styles.table}>
@@ -505,7 +549,7 @@ const ChatBot = () => {
             } else {
                 return (
                     <div>
-                        <pre style={{
+                        {/* <pre style={{
                             backgroundColor: '#f0f0f0',
                             padding: '10px',
                             borderRadius: '5px',
@@ -513,7 +557,7 @@ const ChatBot = () => {
                             wordWrap: 'break-word'
                         }}>
                             {JSON.stringify(message, null, 2)}
-                        </pre>
+                        </pre> */}
                         <div style={styles.chartContainer}>
                             <div style={styles.messageChart}>
 
@@ -569,18 +613,30 @@ const ChatBot = () => {
 
             <div style={styles.chatMessages}>
                 {messages.map((msg, index) => (
-                    <div
-                        key={index}
-                        style={{
-                            ...styles.message,
-                            alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                            backgroundColor: msg.sender === 'user' ? '#d1f4ff' : '#f4f4f4',
-                            width: msg.type === 'chart' ? '90%' : 'auto',
-                            maxWidth: msg.type === 'chart' ? '90%' : '60%',
-                        }}
-                    >
-                        <MessageContent message={msg} />
-                    </div>
+                    <MessageWrapper key={index} isUser={msg.sender === 'user'}>
+                        {msg.sender === 'user' && userInfo && (
+                            <Avatar
+                                src={userInfo.avatar_url}
+                                alt="User avatar"
+                                isUser={true}
+                            />
+                        )}
+                        <div
+                            key={index}
+                            style={{
+                                ...styles.message,
+                                alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
+                                backgroundColor: msg.sender === 'user' ? '#1a73e8' : '#f4f4f4',
+                                color: msg.sender === 'user' ? '#FFFFFF' : 'grey',
+                                width: msg.type === 'chart' ? '90%' : 'auto',
+                                maxWidth: msg.type === 'chart' ? '90%' : '60%',
+                                borderBottomLeftRadius: msg.sender === 'user' ? '16px' : '0px',
+                                borderBottomRightRadius: msg.sender === 'user' ? '0px' : '16px'
+                            }}
+                        >
+                            <MessageContent message={msg} />
+                        </div>
+                    </MessageWrapper>
                 ))}
                 {isSummarizing && (
                     <div style={{
@@ -591,8 +647,13 @@ const ChatBot = () => {
                         alignItems: 'center',
                         gap: '8px'
                     }}>
-                        <Loader className="animate-spin" size={16} />
-                        <span>Generating summary...</span>
+                        {/* <Loader className="animate-spin" size={16} />
+                        <span>Generating summary...</span> */}
+                        <TypingDotsContainer>
+                            <TypingDot />
+                            <TypingDot />
+                            <TypingDot />
+                        </TypingDotsContainer>
                     </div>
                 )}
             </div>
