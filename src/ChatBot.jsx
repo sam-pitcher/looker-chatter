@@ -8,8 +8,10 @@ import styled, { keyframes } from 'styled-components';
 const ChatBot = () => {
     const [selectedModel, setSelectedModel] = useState('');
     const [selectedExplore, setSelectedExplore] = useState('');
+    const [selectedAgent, setSelectedAgent] = useState('');
     const [models, setModels] = useState([]);
     const [explores, setExplores] = useState([]);
+    const [agents, setAgents] = useState([]);
     const [messages, setMessages] = useState([]);
     const [userInfo, setUserInfo] = useState('');
     const [input, setInput] = useState('');
@@ -28,6 +30,28 @@ const ChatBot = () => {
             }
         };
         fetchAvatar();
+    }, []);
+
+    useEffect(() => {
+        const fetchAgents = async () => {
+            try {
+                const response = await core40SDK.ok(core40SDK.run_inline_query({
+                    body: {
+                        model: 'chatter',
+                        view: 'agents',
+                        fields: ['agents.agent_name']
+                    },
+                    result_format: 'json',
+                }));
+                console.log('agents: ', response)
+                // const agentNames = response.map(item => item["agents.agent_name"]);
+                // console.log('agentNames: ', agentNames)
+                setAgents(response);
+            } catch (error) {
+                console.error('Error fetching LookML models:', error);
+            }
+        };
+        fetchAgents();
     }, []);
 
     useEffect(() => {
@@ -252,8 +276,8 @@ const ChatBot = () => {
 
     // Function that summarises response from runQueryFromJson
     const handleSendMessage = async () => {
-        if (!selectedModel || !selectedExplore) {
-            alert('Please select a Model and Explore before sending a message.');
+        if (!selectedAgent) {
+            alert('Please select an Agent before sending a message.');
             return;
         }
 
@@ -291,7 +315,8 @@ const ChatBot = () => {
                         'chat_prompt.previous_messages': `'${singleLineBulletList}'`,
                         'chat_prompt.prompt_input': input.replace(/,/g, ''),
                         'chat_prompt.model': `'${selectedModel}'`,
-                        'chat_prompt.explore': `'${selectedExplore}'`
+                        'chat_prompt.explore': `'${selectedExplore}'`,
+                        'chat_prompt.agent': `'${selectedAgent}'`,
                     },
                 },
                 result_format: 'json',
@@ -594,6 +619,19 @@ const ChatBot = () => {
         <div style={styles.chatBotContainer}>
             <div style={styles.selectionContainer}>
                 <select
+                    value={selectedAgent}
+                    onChange={(e) => setSelectedAgent(e.target.value)}
+                    style={styles.dropdown}
+                >
+                    <option value="">Select Agent</option>
+                    {agents.map((agent, index) => (
+                        <option key={index} value={agent["agents.agent_name"]}>
+                            {agent["agents.agent_name"]}
+                        </option>
+                    ))}
+                </select>
+
+                {/* <select
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
                     style={styles.dropdown}
@@ -617,15 +655,15 @@ const ChatBot = () => {
                             {explore.name}
                         </option>
                     ))}
-                </select>
+                </select> */}
             </div>
 
-            <div 
+            <div
                 style={{
                     ...styles.chatMessages,
                     overflowY: 'auto',
                     scrollBehavior: 'smooth'
-                }} 
+                }}
                 ref={chatContainerRef}
             >
                 {messages.map((msg, index) => (

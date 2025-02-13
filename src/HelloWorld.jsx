@@ -3,6 +3,7 @@ import { Space, ComponentsProvider, Span, Tabs2, Tab2 } from '@looker/components
 import { ExtensionContext } from '@looker/extension-sdk-react'
 import { DataProvider } from '@looker/components-data'
 import ChatBot from './ChatBot';
+import ManageAgents from './ManageAgents';
 import Examples from './Examples';
 import Fields from './Fields';
 import ExtraContext from './ExtraContext';
@@ -12,7 +13,7 @@ export const HelloWorld = () => {
 
   return (
     <>
-    <div style={{ fontFamily: 'Georgia' }}>
+    <div style={{ fontFamily: 'Roboto' }}>
       <ComponentsProvider>
         <DataProvider sdk={core40SDK}>
         {/* <p>Chatter</p> */}
@@ -20,7 +21,11 @@ export const HelloWorld = () => {
           <Tab2 id="10" label="Chatter">
               <ChatBot />
           </Tab2>
-          <Tab2 id="11" label="Examples">
+          <Tab2 id="14" label="Manage Agents">
+            <h1>Manage Agents.</h1>
+              <ManageAgents />
+          </Tab2>
+          {/* <Tab2 id="11" label="Examples">
             <h1>Examples set up.</h1>
               <Examples />
           </Tab2>
@@ -31,7 +36,7 @@ export const HelloWorld = () => {
           <Tab2 id="13" label="Extra Context">
             <h1>Extra Context set up.</h1>
               <ExtraContext />
-          </Tab2>
+          </Tab2> */}
         </Tabs2>
         </DataProvider>
       </ComponentsProvider>
