@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useRef, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
 import { Loader } from 'lucide-react';
 import { Chart } from "react-google-charts";
 import { styles, Avatar, MessageWrapper, TypingDotsContainer, TypingDot, MessageContainer, GlobalStyle } from './styles';
+import styled, { keyframes } from 'styled-components';
 
 const ChatBot = () => {
     const [selectedModel, setSelectedModel] = useState('');
@@ -14,6 +15,7 @@ const ChatBot = () => {
     const [input, setInput] = useState('');
     const [isSummarizing, setIsSummarizing] = useState(false);
     const { core40SDK } = useContext(ExtensionContext);
+    const chatContainerRef = useRef(null);
 
     useEffect(() => {
         const fetchAvatar = async () => {
@@ -54,6 +56,23 @@ const ChatBot = () => {
         fetchExplores();
     }, [selectedModel]);
 
+    // Updated scroll handling
+    const scrollToBottom = () => {
+        if (chatContainerRef.current) {
+            setTimeout(() => {
+                chatContainerRef.current.scrollTo({
+                    top: chatContainerRef.current.scrollHeight,
+                    behavior: 'smooth'
+                });
+            }, 100); // Small delay to ensure content is rendered
+        }
+    };
+
+    // Add effect to scroll to bottom when messages change
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
     const convertMessagesToBulletList = (messages) => {
         const bulletMessages = messages
             .map((item) => {
@@ -69,6 +88,30 @@ const ChatBot = () => {
         const match = input.match(jsonRegex);
         return match ? match[0] : null;
     }
+
+    // Add bounce animation keyframes
+    const bounce = keyframes`
+        0% { transform: translateY(0); }
+        50% { transform: translateY(-2px); }
+        100% { transform: translateY(0); }
+    `;
+
+    const TypingDotsContainer = styled.div`
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 8px;
+    `;
+
+    // Update TypingDot component with smoother animation
+    const TypingDot = styled.div`
+        width: 6px;
+        height: 6px;
+        background-color: #999;
+        border-radius: 50%;
+        animation: ${bounce} 1s infinite ease-in-out;
+        animation-delay: ${props => props.$delay || '0s'};
+    `;
 
     const processDataForChart = (jsonPayload) => {
         // if (!window.google || !window.google.visualization) {
@@ -161,12 +204,12 @@ const ChatBot = () => {
         });
 
         const options = {
-            title: 'Order Items by Status',
+            title: jsonPayload.metadata?.title || `${dimensions[0]} by ${measures.join(' and ')}`,
             'width': 700,
-            'height': 400
+            'height': 400,
+            vAxes: vAxes,
+            series: series
         };
-
-
 
         return {
             type: 'chart',
@@ -176,11 +219,6 @@ const ChatBot = () => {
     };
 
     const processQueryResponse = (response) => {
-        // if (!isGoogleChartsLoaded) {
-        //     console.error("Google Charts not ready");
-        //     return null;
-        // }
-
         if (!response || !response.metadata || !response.rows) {
             console.error('Invalid response structure');
             return null;
@@ -582,7 +620,14 @@ const ChatBot = () => {
                 </select>
             </div>
 
-            <div style={styles.chatMessages}>
+            <div 
+                style={{
+                    ...styles.chatMessages,
+                    overflowY: 'auto',
+                    scrollBehavior: 'smooth'
+                }} 
+                ref={chatContainerRef}
+            >
                 {messages.map((msg, index) => (
                     <MessageWrapper key={index} isUser={msg.sender === 'user'}>
                         {msg.sender === 'user' && userInfo && (
@@ -593,7 +638,6 @@ const ChatBot = () => {
                             />
                         )}
                         <div
-                            key={index}
                             style={{
                                 ...styles.message,
                                 alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
@@ -616,18 +660,18 @@ const ChatBot = () => {
                         backgroundColor: '#f4f4f4',
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '8px'
+                        borderRadius: '16px',
+                        padding: '4px 12px'
                     }}>
-                        {/* <Loader className="animate-spin" size={16} />
-                        <span>Generating summary...</span> */}
                         <TypingDotsContainer>
-                            <TypingDot />
-                            <TypingDot />
-                            <TypingDot />
+                            <TypingDot $delay="0s" />
+                            <TypingDot $delay="0.2s" />
+                            <TypingDot $delay="0.4s" />
                         </TypingDotsContainer>
                     </div>
                 )}
             </div>
+
             <div style={styles.inputSection}>
                 <textarea
                     value={input}
@@ -640,7 +684,6 @@ const ChatBot = () => {
                     }}
                     style={styles.input}
                     placeholder="Type your message..."
-
                 />
                 <button
                     onClick={handleSendMessage}
