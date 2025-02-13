@@ -2,10 +2,7 @@ import React, { useEffect, useState, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
 import { Loader } from 'lucide-react';
 import { Chart } from "react-google-charts";
-import { styles, TypingDotsContainer, TypingDot, MessageContainer, GlobalStyle } from './styles';
-import styled, { createGlobalStyle } from 'styled-components';
-
-
+import { styles, Avatar, MessageWrapper, TypingDotsContainer, TypingDot, MessageContainer, GlobalStyle } from './styles';
 
 const ChatBot = () => {
     const [selectedModel, setSelectedModel] = useState('');
@@ -30,21 +27,6 @@ const ChatBot = () => {
         };
         fetchAvatar();
     }, []);
-
-    const Avatar = styled.img`
-  width: 45px;
-  height: 45px;
-  border-radius: 50%;
-  order: ${props => props.isUser ? 2 : 0};
-`;
-
-    const MessageWrapper = styled.div`
-  display: flex;
-  align-items: flex-start;
-  justify-content: ${props => props.isUser ? 'flex-end' : 'flex-start'};
-  margin: 8px 0;
-  gap: 8px;
-`;
 
     useEffect(() => {
         const fetchModels = async () => {
@@ -277,6 +259,7 @@ const ChatBot = () => {
                 result_format: 'json',
             }));
 
+            console.log('debug!: ', chatResponse[0]["chat_prompt.generated_content"])
             const generatedContent = chatResponse[0]["chat_prompt.generated_content"].trim();
             const cleanGeneratedContent = extractJson(generatedContent);
 
@@ -451,18 +434,6 @@ const ChatBot = () => {
             const percentage = (value - minValue) / (maxValue - minValue);
             return `rgba(0, 0, 255, ${percentage * 0.5})`; // Blue heatmap
         };
-
-        // Global styles for animations
-        const GlobalStyle = createGlobalStyle`
-            @keyframes typingDots {
-            0%, 80%, 100% {
-                transform: scale(0.3);
-            }
-            40% {
-                transform: scale(1.0);
-            }
-            }
-            `;
 
         return (
             <div style={styles.tableContainer}>
