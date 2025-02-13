@@ -162,8 +162,8 @@ const ChatBot = () => {
 
         const options = {
             title: 'Order Items by Status',
-            'width': 400,
-            'height': 300
+            'width': 700,
+            'height': 400
         };
 
 
