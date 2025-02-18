@@ -2,11 +2,11 @@ import React, { useEffect, useState, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
 import Modal from 'react-modal';
 
-const Examples = () => {
+const Examples = (props) => {
     const [selectedModel, setSelectedModel] = useState('');
     const [selectedExplore, setSelectedExplore] = useState('');
-    const [models, setModels] = useState([]);
-    const [explores, setExplores] = useState([]);
+    const [model, setModel] = useState('');
+    const [explore, setExplore] = useState('');
     const [examplesData, setExamplesData] = useState([]);
     const [modalIsOpen, setModalIsOpen] = useState(false);
     const [jsonEditData, setJsonEditData] = useState({});
@@ -63,30 +63,40 @@ const Examples = () => {
     };
 
     useEffect(() => {
-        const fetchModels = async () => {
+        const setModel = async () => {
             try {
-                const allModels = await core40SDK.ok(core40SDK.all_lookml_models({ fields: "" }));
-                setModels(allModels);
+                setSelectedModel(props.model)
             } catch (error) {
-                console.error('Error fetching LookML models:', error);
+                console.error('Error setting LookML Model:', error);
             }
         };
-        fetchModels();
+        setModel();
     }, []);
 
     useEffect(() => {
-        const fetchExplores = async () => {
-            if (selectedModel) {
-                try {
-                    const model = await core40SDK.ok(core40SDK.lookml_model(selectedModel));
-                    setExplores(model.explores);
-                } catch (error) {
-                    console.error('Error fetching explores for model:', error);
-                }
+        const setExplore = async () => {
+            try {
+                setSelectedExplore(props.explore)
+            } catch (error) {
+                console.error('Error setting LookML Explore:', error);
             }
         };
-        fetchExplores();
-    }, [selectedModel]);
+        setExplore();
+    }, [setModel]);
+
+    // useEffect(() => {
+    //     const fetchExplores = async () => {
+    //         if (selectedModel) {
+    //             try {
+    //                 const model = await core40SDK.ok(core40SDK.lookml_model(selectedModel));
+    //                 setExplores(model.explores);
+    //             } catch (error) {
+    //                 console.error('Error fetching explores for model:', error);
+    //             }
+    //         }
+    //     };
+    //     fetchExplores();
+    // }, [selectedModel]);
 
     useEffect(() => {
         const fetchExamplesData = async () => {
@@ -165,57 +175,6 @@ const Examples = () => {
             return [];
         }
     };
-
-    // const processItems = async (items) => {
-    //     const results = [];
-    //     const formatJson = (inputJson) => {
-    //         const jsonString = JSON.stringify(inputJson)
-    //             .replace(/\\u0027/g, "'")
-    //             .replace(/\\/g, "")
-    //             .replace(/"/g, "'")
-    //         return jsonString
-    //     }
-    //     for (const item of items) {
-    //         const processedItem = { ...item };
-    //         delete processedItem['query.id'];
-    //         delete processedItem['history.count'];
-    //         const formattedItem = formatJson(processedItem)
-    //         results.push(formattedItem);
-    //         console.log(results)
-
-    //     }
-    //     const jsonString = results.join("CHATTERRETTAHC")
-    //     console.log(jsonString)
-    //     const response = await Promise.race([
-    //         core40SDK.ok(
-    //             core40SDK.run_inline_query({
-    //                 body: {
-    //                     model: 'chatter',
-    //                     view: 'multi_json_prompt',
-    //                     fields: ['multi_json_prompt.question', 'multi_json_prompt.output_json'],
-    //                     filters: {
-    //                         'multi_json_prompt.prompt_input': `"${jsonString}"`,
-    //                     },
-    //                 },
-    //                 result_format: 'json',
-    //             })
-    //         ),
-    //         new Promise((_, reject) =>
-    //             setTimeout(() => reject(new Error('Request timed out')), 15000)
-    //         ),
-    //     ]);
-
-    //     console.log(response)
-
-    //     const result = response.map(item => ({
-    //         question: item["multi_json_prompt.question"],
-    //         json: formatJson(JSON.parse(item["multi_json_prompt.output_json"]))
-    //     }));
-
-    //     console.log(result)
-
-    //     return result
-    // };
 
     const handleFetchExamples = async () => {
         if (selectedModel) {
@@ -496,7 +455,7 @@ const Examples = () => {
         <div style={styles.container}>
             <style>{spinnerKeyframes}</style>
             <div style={styles.selectionContainer}>
-                <select
+                {/* <select
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
                     style={styles.dropdown}
@@ -520,7 +479,7 @@ const Examples = () => {
                             {explore.name}
                         </option>
                     ))}
-                </select>
+                </select> */}
                 <button
                     onClick={handleFetchExamples}
                     style={{

@@ -217,7 +217,7 @@ export const styles = {
         margin: 0,
         whiteSpace: 'pre-wrap',
         fontSize: '14px',
-        fontFamily: 'monospace',
+        fontFamily: 'Roboto',
     },
     tableContainer: {
         width: '100%',

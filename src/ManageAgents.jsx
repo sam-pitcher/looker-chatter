@@ -8,9 +8,32 @@ import ExtraContext from './ExtraContext';
 const ManageAgents = () => {
     const [selectedModel, setSelectedModel] = useState('');
     const [selectedExplore, setSelectedExplore] = useState('');
+    const [selectedAgent, setSelectedAgent] = useState('');
+    const [newAgentName, setNewAgentName] = useState('');
+    const [isAddingNewAgent, setIsAddingNewAgent] = useState(false);
     const [models, setModels] = useState([]);
     const [explores, setExplores] = useState([]);
+    const [agents, setAgents] = useState([]);
     const { core40SDK } = useContext(ExtensionContext);
+
+    useEffect(() => {
+        const fetchAgents = async () => {
+            try {
+                const response = await core40SDK.ok(core40SDK.run_inline_query({
+                    body: {
+                        model: 'chatter',
+                        view: 'agents',
+                        fields: ['agents.agent_name']
+                    },
+                    result_format: 'json',
+                }));
+                setAgents(response);
+            } catch (error) {
+                console.error('Error fetching agents:', error);
+            }
+        };
+        fetchAgents();
+    }, []);
 
     useEffect(() => {
         const fetchModels = async () => {
@@ -38,13 +61,58 @@ const ManageAgents = () => {
         fetchExplores();
     }, [selectedModel]);
 
+    const handleToggleAddAgent = () => {
+        setIsAddingNewAgent(!isAddingNewAgent);
+        // Reset selections when toggling
+        setSelectedAgent('');
+        setNewAgentName('');
+        setSelectedModel('');
+        setSelectedExplore('');
+    };
+
+    const getActiveAgentName = () => {
+        if (isAddingNewAgent) {
+            return newAgentName;
+        }
+        return selectedAgent;
+    };
+
     return (
         <div style={styles.container}>
             <div style={styles.selectionContainer}>
+                <div className="flex items-center gap-4 mb-4">
+                    <button
+                        onClick={handleToggleAddAgent}
+                    >
+                        {isAddingNewAgent ? 'Select Existing Agent' : 'Add New Agent'}
+                    </button>
+                </div>
+
+                {isAddingNewAgent ? (
+                    <input
+                        type="text"
+                        value={newAgentName}
+                        onChange={(e) => setNewAgentName(e.target.value)}
+                        placeholder="Enter new agent name"
+                    />
+                ) : (
+                    <select
+                        value={selectedAgent}
+                        onChange={(e) => setSelectedAgent(e.target.value)}
+                    >
+                        <option value="">Select Agent</option>
+                        {agents.map((agent, index) => (
+                            <option key={index} value={agent["agents.agent_name"]}>
+                                {agent["agents.agent_name"]}
+                            </option>
+                        ))}
+                    </select>
+                )}
+
                 <select
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    style={styles.dropdown}
+                    disabled={isAddingNewAgent ? !newAgentName : !selectedAgent}
                 >
                     <option value="">Select Model</option>
                     {models.map((model) => (
@@ -53,10 +121,10 @@ const ManageAgents = () => {
                         </option>
                     ))}
                 </select>
+
                 <select
                     value={selectedExplore}
                     onChange={(e) => setSelectedExplore(e.target.value)}
-                    style={styles.dropdown}
                     disabled={!selectedModel}
                 >
                     <option value="">Select Explore</option>
@@ -67,14 +135,17 @@ const ManageAgents = () => {
                     ))}
                 </select>
             </div>
-            <div>
-                <p>Next we need to upload examples to BigQuery for the few shot prompt.</p>
-                <Examples />
-                <p>Here we can select which fields chatter will have access to.</p>
-                <Fields />
-                <p>Finally we need to add any additional context.</p>
-                <ExtraContext />
-            </div>
+
+            {((isAddingNewAgent && newAgentName) || (!isAddingNewAgent && selectedAgent)) && (
+                <div className="mt-8">
+                    <p className="mb-4">Next we need to upload examples to BigQuery for the few shot prompt.</p>
+                    <Examples agent={getActiveAgentName()} model={selectedModel} explore={selectedExplore} />
+                    <p className="mt-6 mb-4">Here we can select which fields chatter will have access to.</p>
+                    <Fields />
+                    <p className="mt-6 mb-4">Finally we need to add any additional context.</p>
+                    <ExtraContext />
+                </div>
+            )}
         </div>
     );
 };
