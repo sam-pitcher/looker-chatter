@@ -71,7 +71,7 @@ const AgentList = () => {
                                     style={{
                                       ...styles.button,
                                         margin: '5px 0',
-                                        width: 'calc(100% - 10px)',
+                                        width: 'calc(50% - 10px)',
                                         whiteSpace: 'nowrap',
                                     }}
                                 >

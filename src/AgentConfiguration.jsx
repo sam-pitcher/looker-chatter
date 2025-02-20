@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { ExtensionContext } from '@looker/extension-sdk-react';
-import Examples from './Examples';
+import ExampleComponent from './ExampleComponent';
 import Fields from './Fields';
 import ExtraContext from './ExtraContext';
+import { styles } from './styles'; // Import your styles
 
 const AgentConfiguration = ({ agent: initialAgentName, onBack }) => {
     const [agentName, setAgentName] = useState(initialAgentName);
@@ -40,40 +41,22 @@ const AgentConfiguration = ({ agent: initialAgentName, onBack }) => {
 
     return (
         <div>
-            <h2>{initialAgentName ? 'Edit Agent' : 'Create Agent'}</h2>
-            <button onClick={onBack}>Back to List</button>
+            <h3>{initialAgentName ? 'Edit Agent' : 'Create Agent'}</h3>
+            <button onClick={onBack} style={{
+                ...styles.button,
+                margin: '5px 5px 5px 5px',
+                whiteSpace: 'nowrap',
+            }}>Back to List</button>
             <input
                 type="text"
+                style={styles.input}
                 value={agentName}
                 onChange={(e) => setAgentName(e.target.value)}
                 placeholder="Agent Name"
             />
-            <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-            >
-                <option value="">Select Model</option>
-                {models.map((model) => (
-                    <option key={model.name} value={model.name}>
-                        {model.name}
-                    </option>
-                ))}
-            </select>
-            <select
-                value={selectedExplore}
-                onChange={(e) => setSelectedExplore(e.target.value)}
-                disabled={!selectedModel}
-            >
-                <option value="">Select Explore</option>
-                {explores.map((explore) => (
-                    <option key={explore.name} value={explore.name}>
-                        {explore.name}
-                    </option>
-                ))}
-            </select>
-            <Examples agent={agentName} model={selectedModel} explore={selectedExplore} />
-            <Fields />
-            <ExtraContext />
+            <ExampleComponent agent={agentName} />
+            {/* <Fields /> */}
+            {/* <ExtraContext /> */}
         </div>
     );
 };
