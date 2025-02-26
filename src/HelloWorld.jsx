@@ -18,20 +18,20 @@ export const HelloWorld = () => {
       <ComponentsProvider>
         <DataProvider sdk={core40SDK}>
           <p>Talk to your data with chatter.</p>
-            {/* <ChatBot /> */}
+            <ChatBot />
         {/* <p>Chatter</p> */}
-        <Tabs2>
-          <Tab2 id="10" label="Chatter">
+        {/* <Tabs2> */}
+          {/* <Tab2 id="10" label="Chatter">
               <ChatBot />
-          </Tab2>
+          </Tab2> */}
           {/* <Tab2 id="14" label="Manage Agents">
             <h1>Manage Agents.</h1>
               <ManageAgents />
           </Tab2> */}
-          <Tab2 id="15" label="Manage Agents">
+          {/* <Tab2 id="15" label="Manage Agents">
             <h1>Manage Agents</h1>
               <AgentList />
-          </Tab2>
+          </Tab2> */}
           {/* <Tab2 id="11" label="Examples">
             <h1>Examples set up.</h1>
               <Examples />
@@ -44,7 +44,7 @@ export const HelloWorld = () => {
             <h1>Extra Context set up.</h1>
               <ExtraContext />
           </Tab2> */}
-        </Tabs2>
+        {/* </Tabs2> */}
         </DataProvider>
       </ComponentsProvider>
       </div>

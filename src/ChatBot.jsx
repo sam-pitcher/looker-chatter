@@ -314,8 +314,8 @@ const ChatBot = () => {
                     filters: {
                         'chat_prompt.previous_messages': `'${singleLineBulletList}'`,
                         'chat_prompt.prompt_input': input.replace(/,/g, ''),
-                        'chat_prompt.model': `'${selectedModel}'`,
-                        'chat_prompt.explore': `'${selectedExplore}'`,
+                        // 'chat_prompt.model': `'${selectedModel}'`,
+                        // 'chat_prompt.explore': `'${selectedExplore}'`,
                         'chat_prompt.agent': `'${selectedAgent}'`,
                     },
                 },
@@ -398,6 +398,7 @@ const ChatBot = () => {
                     filters: {
                         'summary_prompt.previous_messages': `'${singleLineBulletList}'`,
                         'summary_prompt.prompt_input': jsonString,
+                        'summary_prompt.agent': `'${selectedAgent}'`,
                     },
                 },
                 result_format: 'json',
